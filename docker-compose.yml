@@ -2,11 +2,11 @@ services:
   obelisk:
     image: ghcr.io/xbrfuj01/obelisk-tools:latest
     pull_policy: always
-    container_name: obelisk
+    container_name: obelisk-tools
     ports:
       - "30301:30301"
     volumes:
-      - /mnt/apps/obelisk/data:/data
+      - /mnt/apps/obelisk-tools/data:/data
     restart: unless-stopped
     depends_on:
       - downloader-converter
@@ -26,11 +26,11 @@ services:
   downloader-converter:
     image: ghcr.io/xbrfuj01/obelisk-tools-downloader-converter:latest
     pull_policy: always
-    container_name: obelisk-downloader-converter
+    container_name: obelisk-tools-downloader-converter
     volumes:
-      - /mnt/apps/obelisk/downloader-converter-data:/data
-      - /mnt/apps/obelisk/downloader-converter-downloads:/downloads
-      - /mnt/apps/obelisk/data:/core-data:ro
+      - /mnt/apps/obelisk-tools/downloader-converter-data:/data
+      - /mnt/apps/obelisk-tools/downloader-converter-downloads:/downloads
+      - /mnt/apps/obelisk-tools/data:/core-data:ro
     restart: unless-stopped
     depends_on:
       - bgutil-provider
@@ -38,7 +38,7 @@ services:
   bgutil-provider:
     image: brainicism/bgutil-ytdlp-pot-provider:latest
     pull_policy: always
-    container_name: obelisk-bgutil-provider
+    container_name: obelisk-tools-bgutil-provider
     init: true
     restart: unless-stopped
 
@@ -49,9 +49,9 @@ services:
   scroll-recorder:
     image: ghcr.io/xbrfuj01/obelisk-tools-scroll-recorder:latest
     pull_policy: always
-    container_name: obelisk-scroll-recorder
+    container_name: obelisk-tools-scroll-recorder
     volumes:
-      - /mnt/apps/obelisk/scroll-recorder:/data
+      - /mnt/apps/obelisk-tools/scroll-recorder:/data
     restart: unless-stopped
 
   # Metadata (EXIF/XMP/IPTC) editor - stateless, own container so its
@@ -61,7 +61,7 @@ services:
   metadata:
     image: ghcr.io/xbrfuj01/obelisk-tools-metadata:latest
     pull_policy: always
-    container_name: obelisk-metadata
+    container_name: obelisk-tools-metadata
     volumes:
-      - /mnt/apps/obelisk/metadata:/downloads
+      - /mnt/apps/obelisk-tools/metadata:/downloads
     restart: unless-stopped
