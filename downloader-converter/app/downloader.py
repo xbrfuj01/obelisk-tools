@@ -662,11 +662,21 @@ def _run_job(job_id: str):
                 "preferredquality": "192",
             }]
         elif job.mode == "video_only":
-            # premiere_compat no longer restricts the format selection here -
-            # always grab the best available, then check the actual codec
-            # after downloading and re-encode only if it turns out to
-            # matter (see the premiere_compat block after the download).
-            ydl_opts["format"] = f"bestvideo{height_filter}/best{height_filter}"
+            base_format = f"bestvideo{height_filter}/best{height_filter}"
+            # yt-dlp's own default codec ranking places vp9/av1 above h264
+            # at equal resolution (they're the better-quality-per-bit
+            # choice), so a plain "bestvideo" almost always hands back a
+            # vp9/av1 stream even on videos where an h264 stream exists at
+            # the exact same height - premiere_compat then has to re-encode
+            # it after the fact (see the premiere_compat block after the
+            # download) for a resolution where that was never necessary.
+            # [vcodec^=avc1] asks for h264 first at the same height, and
+            # falls through to the unrestricted selector if none exists -
+            # never removing an option that would otherwise have downloaded.
+            ydl_opts["format"] = (
+                f"bestvideo[vcodec^=avc1]{height_filter}/{base_format}"
+                if job.premiere_compat else base_format
+            )
             if job.container in VIDEO_FORMATS:
                 ydl_opts.setdefault("postprocessors", [])
                 ydl_opts["postprocessors"].append({
@@ -674,7 +684,17 @@ def _run_job(job_id: str):
                     "preferedformat": job.container,
                 })
         else:
-            ydl_opts["format"] = f"bestvideo{height_filter}+bestaudio/best{height_filter}"
+            base_format = f"bestvideo{height_filter}+bestaudio/best{height_filter}"
+            # Same reasoning as video_only above, plus [acodec^=mp4a] for
+            # the audio half (YouTube's h264 streams are almost always
+            # paired with AAC anyway, but this makes it explicit rather
+            # than incidental) - each half falls through to the plain
+            # bestvideo/bestaudio choice independently if no h264/aac
+            # option exists at this height, same as premiere_compat off.
+            ydl_opts["format"] = (
+                f"bestvideo[vcodec^=avc1]{height_filter}+bestaudio[acodec^=mp4a]/{base_format}"
+                if job.premiere_compat else base_format
+            )
             if job.container in VIDEO_FORMATS:
                 ydl_opts["merge_output_format"] = job.container
 
