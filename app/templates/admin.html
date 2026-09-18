@@ -397,58 +397,47 @@
     <h2>Налаштування</h2>
     <form method="post" action="/admin/settings" class="card settings-form">
 
-      <p class="settings-group-title">Завантаження</p>
-      <div class="grid-3">
+      <p class="settings-group-title">Загальні налаштування</p>
+      <div class="grid-4">
         <label>Автоочищення (г)
           <input type="number" name="retention_hours" value="{{ retention_hours }}" min="1" required>
         </label>
-        <label>Перевіряти застарілі файли (хв)
+        <label>Перевірка застарілих файлів (хв)
           <input type="number" name="cleanup_interval_minutes" value="{{ cleanup_interval_minutes }}" min="1" required>
         </label>
-        <label>Максимум одночасних завантажень
+        <label>Макс. одночасних завантажень
           <input type="number" name="max_concurrent_downloads" value="{{ max_concurrent_downloads }}" min="1" required>
         </label>
-      </div>
-
-      <p class="settings-group-title">Конвертер відео</p>
-      <div class="grid-2">
-        <label>Максимум одночасних конвертацій
+        <label>Макс. одночасних конвертацій
           <input type="number" name="max_concurrent_conversions" value="{{ max_concurrent_conversions }}" min="1" required>
         </label>
-        <label>Максимальний розмір файлу для завантаження (МБ)
+        <label>Макс. розмір файлу (МБ)
           <input type="number" name="max_upload_mb" value="{{ max_upload_mb }}" min="1" required>
         </label>
-      </div>
-
-      <div class="grid-2">
-        <div>
-          <p class="settings-group-title">Часовий пояс</p>
-          <label>Часовий пояс для відображення дат/часу
-            <select name="timezone">
-              {% for tz in timezones %}
-                <option value="{{ tz }}" {% if tz == timezone %}selected{% endif %}>{{ tz }}</option>
-              {% endfor %}
-            </select>
-          </label>
-        </div>
-        <div>
-          <p class="settings-group-title">Сесія</p>
-          <label>Тривалість входу на пристрої (днів)
-            <input type="number" name="session_max_age_days" value="{{ session_max_age_days }}" min="1" required>
-          </label>
-        </div>
+        <label>Сесія на пристрої (днів)
+          <input type="number" name="session_max_age_days" value="{{ session_max_age_days }}" min="1" required>
+        </label>
+        <label>Часовий пояс
+          <select name="timezone">
+            {% for tz in timezones %}
+              <option value="{{ tz }}" {% if tz == timezone %}selected{% endif %}>{{ tz }}</option>
+            {% endfor %}
+          </select>
+        </label>
       </div>
 
       <div class="settings-group-title-row">
         <p class="settings-group-title">Проксі для заблокованих сайтів</p>
         <span class="proxy-status" id="proxy-status" hidden></span>
       </div>
-      <label>Адреса проксі (напр. socks5h://user:pass@host:1080)
-        <input type="text" name="proxy_url" value="{{ proxy_url }}" placeholder="залиште порожнім, щоб не використовувати проксі" autocomplete="off">
-      </label>
-      <label>Домени через проксі (через кому)
-        <input type="text" name="proxy_domains" value="{{ proxy_domains }}" autocomplete="off">
-      </label>
+      <div class="grid-2">
+        <label>Адреса проксі (напр. socks5h://user:pass@host:1080)
+          <input type="text" name="proxy_url" value="{{ proxy_url }}" placeholder="залиште порожнім, щоб не використовувати проксі" autocomplete="off">
+        </label>
+        <label>Домени через проксі (через кому)
+          <input type="text" name="proxy_domains" value="{{ proxy_domains }}" autocomplete="off">
+        </label>
+      </div>
 
       <button type="submit">Зберегти</button>
     </form>

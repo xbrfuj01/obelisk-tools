@@ -344,12 +344,22 @@ label {
   gap: 18px;
 }
 
+.grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px;
+}
+
+@media (max-width: 900px) {
+  .grid-4 { grid-template-columns: 1fr 1fr 1fr; }
+}
+
 @media (max-width: 700px) {
-  .grid-3 { grid-template-columns: 1fr 1fr; }
+  .grid-3, .grid-4 { grid-template-columns: 1fr 1fr; }
 }
 
 @media (max-width: 560px) {
-  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
 }
 
 .input-with-status {
@@ -1207,7 +1217,7 @@ button.stat-card:hover { border-color: var(--border-hover); }
 [data-tab-panel="settings"] .card { padding: 16px; gap: 10px; }
 [data-tab-panel="settings"] label { gap: 4px; }
 [data-tab-panel="settings"] input, [data-tab-panel="settings"] select { padding: 8px 12px; font-size: 0.88rem; }
-[data-tab-panel="settings"] .grid-2, [data-tab-panel="settings"] .grid-3 { gap: 10px; }
+[data-tab-panel="settings"] .grid-2, [data-tab-panel="settings"] .grid-3, [data-tab-panel="settings"] .grid-4 { gap: 10px; }
 [data-tab-panel="settings"] .settings-group-title { margin: 4px 0 -2px; padding-top: 10px; }
 [data-tab-panel="settings"] button[type="submit"] { padding: 9px 18px; }
 [data-tab-panel="settings"] .maintenance-actions button { padding: 9px 16px; font-size: 0.88rem; }
