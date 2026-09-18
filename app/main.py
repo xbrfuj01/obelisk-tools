@@ -1,4 +1,5 @@
 import os
+import secrets
 import uuid
 from datetime import datetime
 
@@ -79,6 +80,38 @@ templates.env.globals["is_admin_request"] = _is_admin_request
 templates.env.globals["is_user_online"] = auth.is_user_online
 
 
+# Everything except the setup page itself and the assets that page needs.
+# Deliberately a prefix list rather than a route-by-route dependency: a new
+# route added later is closed by default instead of silently being the one
+# hole left in a site that has no owner yet.
+SETUP_ALLOWED_PREFIXES = ("/setup", "/static/")
+
+
+@app.middleware("http")
+async def setup_gate(request: Request, call_next):
+    """Until the first admin exists, the site answers nothing but /setup.
+
+    Without this a fresh install is not merely unconfigured but wide open:
+    the login gate only switches on once a user row exists (see
+    auth.is_site_gate_enabled), so before setup every tool would be usable
+    by anyone who found the address."""
+    if not auth.setup_completed_cached():
+        db = SessionLocal()
+        try:
+            pending = not auth.is_setup_completed(db)
+        finally:
+            db.close()
+        path = request.url.path
+        if pending and not path.startswith(SETUP_ALLOWED_PREFIXES):
+            # base.html's polling scripts run on the setup page too - they
+            # get a plain JSON error rather than a 303 into an HTML page,
+            # which they'd fail to parse and log as a console error.
+            if path.startswith("/api/"):
+                return JSONResponse({"error": "Сайт ще не налаштовано"}, status_code=503)
+            return RedirectResponse("/setup", status_code=303)
+    return await call_next(request)
+
+
 @app.exception_handler(auth.NotAuthenticated)
 async def not_authenticated_handler(request: Request, exc: auth.NotAuthenticated):
     return RedirectResponse("/site-login", status_code=303)
@@ -140,8 +173,35 @@ def require_admin_dep(request: Request, db: Session = Depends(get_db)):
     auth.record_activity(db, request.session.get("site_username"))
 
 
+def _announce_setup_if_pending():
+    """Prints the one-time setup token to the container log on every start
+    while there's still no admin. The log is the one channel that already
+    requires server-side access to read, which is exactly the property the
+    token needs - and reprinting it every start means a forgotten or
+    scrolled-away token is one restart away, with the old one dead."""
+    db = SessionLocal()
+    try:
+        auth.ensure_setup_state(db)
+        if auth.is_setup_completed(db):
+            return
+        token = auth.issue_setup_token()
+    finally:
+        db.close()
+    line = "=" * 68
+    print(
+        f"\n{line}\n"
+        "Obelisk: адміністратора ще не створено.\n"
+        "Відкрийте сайт — він сам переадресує на /setup — і введіть цей код:\n\n"
+        f"    {token}\n\n"
+        "Код дійсний до перезапуску контейнера і ніде не зберігається.\n"
+        f"{line}\n",
+        flush=True,
+    )
+
+
 @app.on_event("startup")
 def on_startup():
+    _announce_setup_if_pending()
     modules.start_health_check_thread()
     modules.push_downloader_converter_config()
 
@@ -601,6 +661,99 @@ def dismiss_notification(notif_id: str, request: Request, db: Session = Depends(
         db.delete(notif)
         db.commit()
     return {"ok": True}
+
+
+# ---------------- First-run setup ----------------
+# See auth.py's "First-run setup" section for what keeps this door shut. The
+# one rule here: every path out of this handler that isn't a successful
+# first admin ends in 404 or a re-rendered form - never in a redirect that
+# could be replayed, and never in a hint about whether setup once existed.
+
+@app.get("/setup", response_class=HTMLResponse)
+def setup_form(request: Request, db: Session = Depends(get_db)):
+    if auth.is_setup_completed(db):
+        raise HTTPException(status_code=404)
+    return templates.TemplateResponse(
+        "setup.html",
+        {"request": request, "error": None, "csrf_token": _issue_setup_csrf(request)},
+    )
+
+
+def _issue_setup_csrf(request: Request) -> str:
+    token = secrets.token_urlsafe(32)
+    request.session["setup_csrf"] = token
+    return token
+
+
+def _check_setup_csrf(request: Request, submitted: str) -> bool:
+    expected = request.session.get("setup_csrf")
+    if not expected or not submitted:
+        return False
+    return secrets.compare_digest(expected, submitted)
+
+
+@app.post("/setup")
+def setup_submit(
+    request: Request,
+    setup_token: str = Form(...),
+    username: str = Form(...),
+    password: str = Form(...),
+    password_confirm: str = Form(...),
+    csrf_token: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    if auth.is_setup_completed(db):
+        raise HTTPException(status_code=404)
+
+    def again(message: str, status: int = 400):
+        return templates.TemplateResponse(
+            "setup.html",
+            {"request": request, "error": message, "csrf_token": _issue_setup_csrf(request)},
+            status_code=status,
+        )
+
+    # Same lockout the site login uses, so the token can't be ground down by
+    # a script even though it's long enough that it shouldn't matter.
+    ip = request.client.host if request.client else "unknown"
+    key = f"setup:{ip}"
+    locked, remaining = auth.check_lockout(key)
+    if locked:
+        minutes = max(1, remaining // 60)
+        return again(f"Забагато спроб. Спробуйте ще раз через {minutes} хв.", 429)
+
+    if not _check_setup_csrf(request, csrf_token):
+        return again("Форма застаріла — оновіть сторінку і спробуйте ще раз.")
+
+    if not auth.verify_setup_token(setup_token.strip()):
+        auth.register_failed_attempt(key)
+        return again(
+            "Невірний код. Він друкується в логах контейнера при кожному запуску — "
+            "перезапустіть стек, щоб отримати новий.",
+            403,
+        )
+
+    username = username.strip()
+    if not username:
+        return again("Вкажіть логін.")
+    if password != password_confirm:
+        return again("Паролі не збігаються.")
+    if len(password) < auth.MIN_ADMIN_PASSWORD_LENGTH:
+        return again(f"Пароль має бути не коротшим за {auth.MIN_ADMIN_PASSWORD_LENGTH} символів.")
+
+    user = auth.create_first_admin(db, username, password)
+    if not user:
+        # The door shut between the check at the top and here. Whoever holds
+        # this form is not the owner of the account that now exists, so they
+        # get what everyone else gets from now on.
+        raise HTTPException(status_code=404)
+
+    auth.register_successful_attempt(key)
+    auth.clear_setup_token()
+    request.session.pop("setup_csrf", None)
+    request.session["site_access"] = True
+    request.session["site_username"] = user.username
+    auth.record_login(db, user.username)
+    return RedirectResponse("/", status_code=303)
 
 
 # ---------------- Site gate ----------------

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Перше налаштування — Obelisk{% endblock %}
+{% block content %}
+<div class="login-page">
+  <div class="login-box">
+    <h1>Перше налаштування</h1>
+    <p class="hero-sub" style="margin-bottom: 18px;">
+      Створіть обліковий запис адміністратора. Поки його немає, сайт закритий,
+      а після створення ця сторінка зникає назавжди.
+    </p>
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    <form method="post" action="/setup" class="card login-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Код із логів контейнера
+        <input type="text" name="setup_token" required autofocus autocomplete="off"
+               spellcheck="false" autocapitalize="off">
+      </label>
+      <p class="hint">
+        Код друкується в логах контейнера <code>obelisk-tools</code> при кожному
+        запуску. У Dockge: відкрийте стек → вкладка з логами. Перезапуск видає новий код.
+      </p>
+      <label>Логін адміністратора
+        <input type="text" name="username" required autocomplete="username">
+      </label>
+      <label>Пароль
+        <input type="password" name="password" required autocomplete="new-password"
+               minlength="10">
+      </label>
+      <label>Пароль ще раз
+        <input type="password" name="password_confirm" required autocomplete="new-password"
+               minlength="10">
+      </label>
+      <p class="hint">Щонайменше 10 символів.</p>
+      <button type="submit">Створити адміністратора</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 
 from passlib.context import CryptContext
 from fastapi import Request
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import config
@@ -304,3 +305,109 @@ def check_download_rate_limit(key: str) -> bool:
             return False
         entry["count"] += 1
         return True
+
+
+# ---------------- First-run setup ----------------
+# A fresh install has no accounts at all, and /admin is reachable only by a
+# user with is_admin - so there is no way in, and (because the site gate
+# only switches on once a user exists) the whole site sits open to anyone
+# who finds it. /setup is the way in, and it's deliberately the narrowest
+# door in the app:
+#
+#   * it exists only while the users table is empty AND the one-way
+#     "setup_completed" flag has never been set;
+#   * that flag is written in the same transaction that creates the first
+#     admin, so even if the users table were somehow emptied later by a bug,
+#     /setup stays shut forever instead of handing out a fresh admin account
+#     - the users count alone is deliberately NOT the only condition;
+#   * it also requires a token printed to the container log on every start
+#     while setup is pending, so on an internet-exposed deployment merely
+#     reaching the site before its owner does isn't enough to claim admin.
+
+SETUP_COMPLETED_KEY = "setup_completed"
+
+# Long enough that guessing it is hopeless even without the lockout below,
+# short enough to retype by hand from a log line.
+SETUP_TOKEN_BYTES = 16
+
+MIN_ADMIN_PASSWORD_LENGTH = 10
+
+_setup_lock = threading.Lock()
+_setup_token = None
+# Cached only in the "completed" direction: the flag is one-way, so once
+# it's true it can never go back, and every later request can skip the
+# query. Anything that could flip back would have to stay uncached.
+_setup_done_cache = False
+
+
+def setup_completed_cached() -> bool:
+    """Zero-cost check for the hot path (see the setup gate middleware) -
+    False only means "not known yet", so callers must fall back to
+    is_setup_completed() with a real session."""
+    return _setup_done_cache
+
+
+def is_setup_completed(db: Session) -> bool:
+    global _setup_done_cache
+    if _setup_done_cache:
+        return True
+    if get_setting(db, SETUP_COMPLETED_KEY) == "1":
+        _setup_done_cache = True
+    return _setup_done_cache
+
+
+def ensure_setup_state(db: Session):
+    """Closes setup on installations that predate this page: accounts
+    already exist there, so the door was never open in the first place and
+    must not appear to be."""
+    if get_setting(db, SETUP_COMPLETED_KEY) == "1":
+        return
+    if db.query(User).count() > 0:
+        set_setting(db, SETUP_COMPLETED_KEY, "1")
+
+
+def issue_setup_token() -> str:
+    """A fresh token per container start. Never stored anywhere, so a
+    restart invalidates whatever was printed into the log before it, and
+    there's nothing on disk for someone with the volume to read."""
+    global _setup_token
+    _setup_token = secrets.token_hex(SETUP_TOKEN_BYTES)
+    return _setup_token
+
+
+def verify_setup_token(token: str) -> bool:
+    if not _setup_token or not token:
+        return False
+    return secrets.compare_digest(token, _setup_token)
+
+
+def clear_setup_token():
+    global _setup_token
+    _setup_token = None
+
+
+def create_first_admin(db: Session, username: str, password: str):
+    """Creates the very first account, as an admin, and shuts the door
+    behind it - both in one transaction, so there is no moment where an
+    admin exists but setup is still open. Returns the User, or None if the
+    door was already shut (someone else got there first, or this is being
+    replayed); callers must treat None as "setup does not exist", not as a
+    retryable error."""
+    global _setup_done_cache
+    with _setup_lock:
+        if db.query(User).count() > 0 or get_setting(db, SETUP_COMPLETED_KEY) == "1":
+            return None
+        user = User(username=username, password_hash=pwd_context.hash(password), is_admin=True)
+        db.add(user)
+        # Setting.key is the primary key, so a second concurrent insert
+        # fails at the database rather than silently producing a second
+        # admin - the lock above should make that unreachable, this is the
+        # backstop for when it isn't (multiple workers, say).
+        db.add(Setting(key=SETUP_COMPLETED_KEY, value="1"))
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            return None
+    _setup_done_cache = True
+    return user
