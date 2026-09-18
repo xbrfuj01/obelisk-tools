@@ -105,6 +105,20 @@ def get_timezone(db: Session) -> str:
     return get_setting(db, "timezone", config.DEFAULT_TIMEZONE)
 
 
+# ---------------- Module on/off switch ----------------
+# Independent of modules.is_module_available (container health) - this is
+# an admin policy choice (hide this tool from regular users) rather than a
+# fact about whether the container is reachable. Enabled by default so a
+# module that's never been touched behaves as it always did.
+
+def get_module_enabled(db: Session, name: str) -> bool:
+    return get_setting(db, f"module_enabled_{name}") != "0"
+
+
+def set_module_enabled(db: Session, name: str, enabled: bool):
+    set_setting(db, f"module_enabled_{name}", "1" if enabled else "0")
+
+
 # ---------------- Cookies (for videos yt-dlp can't reach anonymously) ----------------
 # Stored as a plain file (yt-dlp's cookiefile option reads Netscape-format
 # cookies.txt directly) under DATA_DIR, which is the same persistent volume

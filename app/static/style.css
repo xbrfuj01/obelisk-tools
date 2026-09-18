@@ -627,6 +627,22 @@ button:active { transform: translateY(1px); }
 
 .btn-primary { align-self: flex-start; }
 
+/* A plain <a> styled like a button - for a link that should look like the
+   page's primary action but isn't a form submit. */
+.btn-link {
+  display: inline-block;
+  align-self: flex-start;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  border-radius: var(--radius-sm);
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+  padding: 12px 22px;
+  box-shadow: 0 8px 20px -8px rgba(91, 124, 255, 0.5);
+}
+
+.btn-link:hover { filter: brightness(1.08); }
+
 .btn-download {
   display: inline-flex;
   align-items: center;
@@ -1513,6 +1529,30 @@ button.stat-card:hover { border-color: var(--border-hover); }
 a.tool-card:hover {
   border-color: var(--border-hover);
   transform: translateY(-2px);
+}
+
+.tool-card.disabled {
+  position: relative;
+  cursor: not-allowed;
+  filter: grayscale(1);
+  opacity: 0.55;
+}
+
+.tool-card.disabled .tool-icon { background: var(--bg-input); }
+
+.tool-badge {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 9px;
 }
 
 .tool-icon {

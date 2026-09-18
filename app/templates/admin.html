@@ -394,6 +394,26 @@
   </section>
 
   <section>
+    <h2>Модулі</h2>
+    <form method="post" action="/admin/modules" class="card settings-form">
+      <p class="hint">Вимкнений модуль недоступний звичайним користувачам (пише "Модуль недоступний"), адмін бачить і відкриває його як завжди.</p>
+      <label class="checkbox-row">
+        <input type="checkbox" name="downloader_converter" {% if module_enabled.downloader_converter %}checked{% endif %}>
+        <span>Завантажувач і конвертер відео</span>
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" name="metadata" {% if module_enabled.metadata %}checked{% endif %}>
+        <span>Редактор метаданих</span>
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" name="scroll_recorder" {% if module_enabled.scroll_recorder %}checked{% endif %}>
+        <span>Scroll Recorder</span>
+      </label>
+      <button type="submit">Зберегти</button>
+    </form>
+  </section>
+
+  <section>
     <h2>Налаштування</h2>
     <form method="post" action="/admin/settings" class="card settings-form">
 

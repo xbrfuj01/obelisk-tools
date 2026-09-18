@@ -5,35 +5,27 @@
   <p class="hero-sub">Оберіть інструмент.</p>
 </div>
 
+{% macro tool_card(available, href, icon, name, desc) %}
+{% if available %}
+<a href="{{ href }}" class="tool-card">
+  <span class="tool-icon">{{ icon }}</span>
+  <span class="tool-name">{{ name }}</span>
+  <span class="tool-desc">{{ desc }}</span>
+</a>
+{% else %}
+<div class="tool-card disabled" aria-disabled="true">
+  <span class="tool-icon">{{ icon }}</span>
+  <span class="tool-name">{{ name }}</span>
+  <span class="tool-desc">{{ desc }}</span>
+  <span class="tool-badge">Вимкнено</span>
+</div>
+{% endif %}
+{% endmacro %}
+
 <div class="tool-grid">
-  {% if available.downloader_converter %}
-  <a href="/downloader" class="tool-card">
-    <span class="tool-icon">⬇</span>
-    <span class="tool-name">Завантаження відео</span>
-    <span class="tool-desc">YouTube, Instagram, TikTok, VK та інші сайти — відео, аудіо, субтитри.</span>
-  </a>
-
-  <a href="/converter" class="tool-card">
-    <span class="tool-icon">⇄</span>
-    <span class="tool-name">Конвертер відео</span>
-    <span class="tool-desc">Перекодування відео у формат, сумісний з Adobe Premiere Pro.</span>
-  </a>
-  {% endif %}
-
-  {% if available.metadata %}
-  <a href="/metadata" class="tool-card">
-    <span class="tool-icon">◎</span>
-    <span class="tool-name">Редактор метаданих</span>
-    <span class="tool-desc">Перегляд і видалення EXIF/XMP/IPTC та інших метаданих із файлу.</span>
-  </a>
-  {% endif %}
-
-  {% if available.scroll_recorder %}
-  <a href="/scroll-recorder" class="tool-card">
-    <span class="tool-icon">▤</span>
-    <span class="tool-name">Scroll Recorder</span>
-    <span class="tool-desc">Запис плавного скролу сторінки у відео заданого формату.</span>
-  </a>
-  {% endif %}
+  {{ tool_card(available.downloader_converter, "/downloader", "⬇", "Завантаження відео", "YouTube, Instagram, TikTok, VK та інші сайти — відео, аудіо, субтитри.") }}
+  {{ tool_card(available.downloader_converter, "/converter", "⇄", "Конвертер відео", "Перекодування відео у формат, сумісний з Adobe Premiere Pro.") }}
+  {{ tool_card(available.metadata, "/metadata", "◎", "Редактор метаданих", "Перегляд і видалення EXIF/XMP/IPTC та інших метаданих із файлу.") }}
+  {{ tool_card(available.scroll_recorder, "/scroll-recorder", "▤", "Scroll Recorder", "Запис плавного скролу сторінки у відео заданого формату.") }}
 </div>
 {% endblock %}

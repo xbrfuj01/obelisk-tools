@@ -122,6 +122,19 @@ async def site_not_authenticated_handler(request: Request, exc: auth.SiteNotAuth
     return RedirectResponse("/site-login", status_code=303)
 
 
+class ModuleDisabled(Exception):
+    pass
+
+
+@app.exception_handler(ModuleDisabled)
+async def module_disabled_handler(request: Request, exc: ModuleDisabled):
+    # Every module's own frontend JS reads response bodies as {"error": ...}
+    # (see proxy.py's _normalize_error_payload, which exists for exactly
+    # this reason) - a plain HTTPException(detail=...) would serialize as
+    # {"detail": ...} instead and silently fail to show anything.
+    return JSONResponse({"error": "Модуль недоступний"}, status_code=503)
+
+
 def get_db():
     db = SessionLocal()
     try:
@@ -202,23 +215,39 @@ def _announce_setup_if_pending():
 @app.on_event("startup")
 def on_startup():
     _announce_setup_if_pending()
+    _bootstrap = SessionLocal()
+    try:
+        modules.load_enabled_state(_bootstrap)
+    finally:
+        _bootstrap.close()
     modules.start_health_check_thread()
     modules.push_downloader_converter_config()
 
 
 # ---------------- Public ----------------
 
-@app.get("/", response_class=HTMLResponse)
-def hub(request: Request, _=Depends(require_site_access_page)):
+def _module_ok(request: Request, db: Session, name: str) -> bool:
+    """The one check page/API routes for `name` should gate on: reachable
+    (health) AND not turned off by an admin for this request's viewer."""
+    return modules.is_module_available(name) and modules.is_enabled_for(request, db, name)
+
+
+def _module_unavailable(request: Request):
     return templates.TemplateResponse(
-        "hub.html", {"request": request, "available": modules.available_modules()}
+        "module_unavailable.html", {"request": request}, status_code=503
     )
 
 
+@app.get("/", response_class=HTMLResponse)
+def hub(request: Request, db: Session = Depends(get_db), _=Depends(require_site_access_page)):
+    available = {name: _module_ok(request, db, name) for name in config.MODULE_URLS}
+    return templates.TemplateResponse("hub.html", {"request": request, "available": available})
+
+
 @app.get("/downloader", response_class=HTMLResponse)
-async def downloader_page(request: Request, _=Depends(require_site_access_page)):
-    if not modules.is_module_available("downloader_converter"):
-        return RedirectResponse("/", status_code=303)
+async def downloader_page(request: Request, db: Session = Depends(get_db), _=Depends(require_site_access_page)):
+    if not _module_ok(request, db, "downloader_converter"):
+        return _module_unavailable(request)
     client_id = request.cookies.get(CLIENT_ID_COOKIE)
     is_new_client = not client_id
     if is_new_client:
@@ -240,8 +269,8 @@ async def downloader_page(request: Request, _=Depends(require_site_access_page))
 
 @app.get("/converter", response_class=HTMLResponse)
 async def converter_page(request: Request, db: Session = Depends(get_db), _=Depends(require_site_access_page)):
-    if not modules.is_module_available("downloader_converter"):
-        return RedirectResponse("/", status_code=303)
+    if not _module_ok(request, db, "downloader_converter"):
+        return _module_unavailable(request)
     client_id = request.cookies.get(CLIENT_ID_COOKIE)
     is_new_client = not client_id
     if is_new_client:
@@ -264,17 +293,17 @@ async def converter_page(request: Request, db: Session = Depends(get_db), _=Depe
 
 @app.get("/metadata", response_class=HTMLResponse)
 def metadata_page(request: Request, db: Session = Depends(get_db), _=Depends(require_site_access_page)):
-    if not modules.is_module_available("metadata"):
-        return RedirectResponse("/", status_code=303)
+    if not _module_ok(request, db, "metadata"):
+        return _module_unavailable(request)
     return templates.TemplateResponse(
         "metadata.html", {"request": request, "max_upload_mb": auth.get_max_upload_mb(db)}
     )
 
 
 @app.get("/scroll-recorder", response_class=HTMLResponse)
-def scroll_recorder_page(request: Request, _=Depends(require_site_access_page)):
-    if not modules.is_module_available("scroll_recorder"):
-        return RedirectResponse("/", status_code=303)
+def scroll_recorder_page(request: Request, db: Session = Depends(get_db), _=Depends(require_site_access_page)):
+    if not _module_ok(request, db, "scroll_recorder"):
+        return _module_unavailable(request)
     return templates.TemplateResponse("scroll_recorder.html", {"request": request})
 
 
@@ -290,9 +319,19 @@ async def _proxy_scroll_recorder(method: str, path: str, json_body=None, timeout
     )
 
 
+def require_module_enabled(module_name: str):
+    """Dependency factory blocking a module's own API routes for anyone but
+    an admin while it's turned off (modules.is_enabled_for)."""
+    def _dep(request: Request, db: Session = Depends(get_db)):
+        if not modules.is_enabled_for(request, db, module_name):
+            raise ModuleDisabled()
+    return _dep
+
+
 @app.post("/api/scroll-recorder/jobs")
 async def create_scroll_recorder_job(
-    request: Request, db: Session = Depends(get_db), _=Depends(require_site_access_api)
+    request: Request, db: Session = Depends(get_db),
+    _=Depends(require_site_access_api), __=Depends(require_module_enabled("scroll_recorder")),
 ):
     ip = request.client.host if request.client else "unknown"
     if not auth.check_download_rate_limit(f"sr:{ip}"):
@@ -309,12 +348,16 @@ async def create_scroll_recorder_job(
 
 
 @app.get("/api/scroll-recorder/jobs/{job_id}")
-async def scroll_recorder_status(job_id: str, _=Depends(require_site_access_api)):
+async def scroll_recorder_status(
+    job_id: str, _=Depends(require_site_access_api), __=Depends(require_module_enabled("scroll_recorder")),
+):
     return await _proxy_scroll_recorder("GET", f"/jobs/{job_id}")
 
 
 @app.delete("/api/scroll-recorder/jobs/{job_id}")
-async def cancel_scroll_recorder_job(job_id: str, _=Depends(require_site_access_api)):
+async def cancel_scroll_recorder_job(
+    job_id: str, _=Depends(require_site_access_api), __=Depends(require_module_enabled("scroll_recorder")),
+):
     return await _proxy_scroll_recorder("DELETE", f"/jobs/{job_id}")
 
 
@@ -323,7 +366,8 @@ async def cancel_scroll_recorder_job(job_id: str, _=Depends(require_site_access_
 # while (a real page load), the rest are quick screenshot round-trips.
 @app.post("/api/scroll-recorder/preview")
 async def create_scroll_recorder_preview(
-    request: Request, db: Session = Depends(get_db), _=Depends(require_site_access_api)
+    request: Request, db: Session = Depends(get_db),
+    _=Depends(require_site_access_api), __=Depends(require_module_enabled("scroll_recorder")),
 ):
     ip = request.client.host if request.client else "unknown"
     if not auth.check_download_rate_limit(f"sr:{ip}"):
@@ -338,7 +382,8 @@ async def create_scroll_recorder_preview(
 
 @app.post("/api/scroll-recorder/preview/{session_id}/remove")
 async def scroll_recorder_preview_remove(
-    session_id: str, request: Request, _=Depends(require_site_access_api)
+    session_id: str, request: Request,
+    _=Depends(require_site_access_api), __=Depends(require_module_enabled("scroll_recorder")),
 ):
     body = await request.json()
     return await _proxy_scroll_recorder(
@@ -347,18 +392,23 @@ async def scroll_recorder_preview_remove(
 
 
 @app.post("/api/scroll-recorder/preview/{session_id}/undo")
-async def scroll_recorder_preview_undo(session_id: str, _=Depends(require_site_access_api)):
+async def scroll_recorder_preview_undo(
+    session_id: str, _=Depends(require_site_access_api), __=Depends(require_module_enabled("scroll_recorder")),
+):
     return await _proxy_scroll_recorder("POST", f"/preview/{session_id}/undo", timeout=30)
 
 
 @app.post("/api/scroll-recorder/preview/{session_id}/remove-header")
-async def scroll_recorder_preview_remove_header(session_id: str, _=Depends(require_site_access_api)):
+async def scroll_recorder_preview_remove_header(
+    session_id: str, _=Depends(require_site_access_api), __=Depends(require_module_enabled("scroll_recorder")),
+):
     return await _proxy_scroll_recorder("POST", f"/preview/{session_id}/remove-header", timeout=30)
 
 
 @app.post("/api/scroll-recorder/preview/{session_id}/scroll")
 async def scroll_recorder_preview_scroll(
-    session_id: str, request: Request, _=Depends(require_site_access_api)
+    session_id: str, request: Request,
+    _=Depends(require_site_access_api), __=Depends(require_module_enabled("scroll_recorder")),
 ):
     body = await request.json()
     return await _proxy_scroll_recorder(
@@ -368,7 +418,8 @@ async def scroll_recorder_preview_scroll(
 
 @app.post("/api/scroll-recorder/preview/{session_id}/record")
 async def scroll_recorder_preview_record(
-    session_id: str, request: Request, _=Depends(require_site_access_api)
+    session_id: str, request: Request,
+    _=Depends(require_site_access_api), __=Depends(require_module_enabled("scroll_recorder")),
 ):
     body = await request.json()
     return await _proxy_scroll_recorder(
@@ -377,12 +428,16 @@ async def scroll_recorder_preview_record(
 
 
 @app.delete("/api/scroll-recorder/preview/{session_id}")
-async def cancel_scroll_recorder_preview(session_id: str, _=Depends(require_site_access_api)):
+async def cancel_scroll_recorder_preview(
+    session_id: str, _=Depends(require_site_access_api), __=Depends(require_module_enabled("scroll_recorder")),
+):
     return await _proxy_scroll_recorder("DELETE", f"/preview/{session_id}", timeout=10)
 
 
 @app.get("/api/scroll-recorder/jobs/{job_id}/file")
-async def scroll_recorder_file(job_id: str, _=Depends(require_site_access_api)):
+async def scroll_recorder_file(
+    job_id: str, _=Depends(require_site_access_api), __=Depends(require_module_enabled("scroll_recorder")),
+):
     return await proxy_helpers.proxy_file_stream(
         config.SCROLL_RECORDER_URL, f"/jobs/{job_id}/file",
         unavailable_message="Модуль запису недоступний",
@@ -409,7 +464,7 @@ async def create_download(
     premiere_compat: bool = Form(False),
     clip_start: str = Form(""),
     clip_end: str = Form(""),
-    _=Depends(require_site_access_api),
+    _=Depends(require_site_access_api), __=Depends(require_module_enabled("downloader_converter")),
 ):
     client_id, is_new = _client_id_and_flag(request)
     ip = request.client.host if request.client else "unknown"
@@ -438,7 +493,9 @@ async def create_download(
 
 
 @app.get("/api/status/{job_id}")
-async def job_status(job_id: str, _=Depends(require_site_access_api)):
+async def job_status(
+    job_id: str, _=Depends(require_site_access_api), __=Depends(require_module_enabled("downloader_converter")),
+):
     return await proxy_helpers.proxy_json(
         config.DOWNLOADER_CONVERTER_URL, "GET", f"/jobs/download/{job_id}",
         unavailable_message="Модуль завантажень недоступний",
@@ -446,7 +503,10 @@ async def job_status(job_id: str, _=Depends(require_site_access_api)):
 
 
 @app.post("/api/cancel/{job_id}")
-async def cancel_download(job_id: str, request: Request, _=Depends(require_site_access_api)):
+async def cancel_download(
+    job_id: str, request: Request,
+    _=Depends(require_site_access_api), __=Depends(require_module_enabled("downloader_converter")),
+):
     client_id, is_new = _client_id_and_flag(request)
     resp = await proxy_helpers.proxy_json(
         config.DOWNLOADER_CONVERTER_URL, "POST", f"/jobs/download/{job_id}/cancel",
@@ -457,7 +517,10 @@ async def cancel_download(job_id: str, request: Request, _=Depends(require_site_
 
 
 @app.get("/api/formats")
-async def get_formats(request: Request, url: str, _=Depends(require_site_access_api)):
+async def get_formats(
+    request: Request, url: str,
+    _=Depends(require_site_access_api), __=Depends(require_module_enabled("downloader_converter")),
+):
     ip = request.client.host if request.client else "unknown"
     if not auth.check_download_rate_limit(f"fmt:{ip}"):
         return JSONResponse(
@@ -473,7 +536,10 @@ async def get_formats(request: Request, url: str, _=Depends(require_site_access_
 
 
 @app.get("/api/recent")
-async def recent_jobs(request: Request, page: int = 1, _=Depends(require_site_access_api)):
+async def recent_jobs(
+    request: Request, page: int = 1,
+    _=Depends(require_site_access_api), __=Depends(require_module_enabled("downloader_converter")),
+):
     client_id, is_new = _client_id_and_flag(request)
     resp = await proxy_helpers.proxy_json(
         config.DOWNLOADER_CONVERTER_URL, "GET", "/jobs/download",
@@ -503,7 +569,9 @@ async def processes(request: Request, response: Response, _=Depends(require_site
 
 
 @app.get("/api/file/{job_id}")
-async def download_file(job_id: str, _=Depends(require_site_access_api)):
+async def download_file(
+    job_id: str, _=Depends(require_site_access_api), __=Depends(require_module_enabled("downloader_converter")),
+):
     return await proxy_helpers.proxy_file_stream(
         config.DOWNLOADER_CONVERTER_URL, f"/jobs/download/{job_id}/file",
         unavailable_message="Модуль завантажень недоступний",
@@ -517,7 +585,7 @@ async def create_conversion(
     quality: str = Form("high"),
     audio_option: str = Form("original"),
     db: Session = Depends(get_db),
-    _=Depends(require_site_access_api),
+    _=Depends(require_site_access_api), __=Depends(require_module_enabled("downloader_converter")),
 ):
     ip = request.client.host if request.client else "unknown"
     if not auth.check_download_rate_limit(f"cv:{ip}"):
@@ -545,7 +613,7 @@ async def create_conversion_from_download(
     request: Request,
     quality: str = Form("high"),
     audio_option: str = Form("original"),
-    _=Depends(require_site_access_api),
+    _=Depends(require_site_access_api), __=Depends(require_module_enabled("downloader_converter")),
 ):
     ip = request.client.host if request.client else "unknown"
     if not auth.check_download_rate_limit(f"cv:{ip}"):
@@ -565,7 +633,9 @@ async def create_conversion_from_download(
 
 
 @app.get("/api/convert/status/{job_id}")
-async def conversion_status(job_id: str, _=Depends(require_site_access_api)):
+async def conversion_status(
+    job_id: str, _=Depends(require_site_access_api), __=Depends(require_module_enabled("downloader_converter")),
+):
     return await proxy_helpers.proxy_json(
         config.DOWNLOADER_CONVERTER_URL, "GET", f"/jobs/convert/{job_id}",
         unavailable_message="Модуль конвертера недоступний",
@@ -573,7 +643,10 @@ async def conversion_status(job_id: str, _=Depends(require_site_access_api)):
 
 
 @app.post("/api/convert/cancel/{job_id}")
-async def cancel_conversion(job_id: str, request: Request, _=Depends(require_site_access_api)):
+async def cancel_conversion(
+    job_id: str, request: Request,
+    _=Depends(require_site_access_api), __=Depends(require_module_enabled("downloader_converter")),
+):
     client_id, is_new = _client_id_and_flag(request)
     resp = await proxy_helpers.proxy_json(
         config.DOWNLOADER_CONVERTER_URL, "POST", f"/jobs/convert/{job_id}/cancel",
@@ -584,7 +657,10 @@ async def cancel_conversion(job_id: str, request: Request, _=Depends(require_sit
 
 
 @app.get("/api/convert/recent")
-async def recent_conversions(request: Request, page: int = 1, _=Depends(require_site_access_api)):
+async def recent_conversions(
+    request: Request, page: int = 1,
+    _=Depends(require_site_access_api), __=Depends(require_module_enabled("downloader_converter")),
+):
     client_id, is_new = _client_id_and_flag(request)
     resp = await proxy_helpers.proxy_json(
         config.DOWNLOADER_CONVERTER_URL, "GET", "/jobs/convert",
@@ -595,7 +671,9 @@ async def recent_conversions(request: Request, page: int = 1, _=Depends(require_
 
 
 @app.get("/api/convert/file/{job_id}")
-async def conversion_file(job_id: str, _=Depends(require_site_access_api)):
+async def conversion_file(
+    job_id: str, _=Depends(require_site_access_api), __=Depends(require_module_enabled("downloader_converter")),
+):
     return await proxy_helpers.proxy_file_stream(
         config.DOWNLOADER_CONVERTER_URL, f"/jobs/convert/{job_id}/file",
         unavailable_message="Модуль конвертера недоступний",
@@ -613,7 +691,7 @@ async def process_metadata(
     request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _=Depends(require_site_access_api),
+    _=Depends(require_site_access_api), __=Depends(require_module_enabled("metadata")),
 ):
     ip = request.client.host if request.client else "unknown"
     if not auth.check_download_rate_limit(f"md:{ip}"):
@@ -630,7 +708,9 @@ async def process_metadata(
 
 
 @app.get("/api/metadata/download/{token}")
-async def download_clean_file(token: str, _=Depends(require_site_access_api)):
+async def download_clean_file(
+    token: str, _=Depends(require_site_access_api), __=Depends(require_module_enabled("metadata")),
+):
     return await proxy_helpers.proxy_file_stream(
         config.METADATA_URL, f"/download/{token}",
         unavailable_message="Модуль редактора метаданих недоступний",
@@ -896,6 +976,7 @@ async def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Dep
     proxy_domains = ",".join(auth.get_proxy_domains(db))
     timezone = auth.get_timezone(db)
     has_cookies = auth.has_cookies()
+    module_enabled = {name: modules.is_module_enabled(name) for name in config.MODULE_URLS}
 
     return templates.TemplateResponse(
         "admin.html",
@@ -936,6 +1017,7 @@ async def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Dep
             "timezone": timezone,
             "timezones": timeutil.COMMON_TIMEZONES,
             "has_cookies": has_cookies,
+            "module_enabled": module_enabled,
         },
     )
 
@@ -1175,6 +1257,30 @@ def admin_settings(
 
     modules.push_downloader_converter_config()
     return RedirectResponse("/admin?tab=settings&saved=1", status_code=303)
+
+
+@app.post("/admin/modules")
+def admin_modules(
+    downloader_converter: bool = Form(False),
+    metadata: bool = Form(False),
+    scroll_recorder: bool = Form(False),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_dep),
+):
+    # An unchecked checkbox simply isn't sent by the browser, so every
+    # module not named in the payload means "off" - each is listed as its
+    # own Form(False) param above rather than parsed generically, exactly
+    # so a module renamed/removed from config.MODULE_URLS can't silently
+    # start being ignored here without FastAPI's own signature mismatch
+    # complaining first.
+    for name, enabled in (
+        ("downloader_converter", downloader_converter),
+        ("metadata", metadata),
+        ("scroll_recorder", scroll_recorder),
+    ):
+        auth.set_module_enabled(db, name, enabled)
+        modules.set_module_enabled(name, enabled)
+    return RedirectResponse("/admin?tab=settings&modules_saved=1", status_code=303)
 
 
 @app.get("/admin/api/proxy-status")
