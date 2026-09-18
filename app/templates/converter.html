@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="hero">
+  <div class="hero-title-row">
+    <a href="/" class="back-link" title="Усі інструменти" aria-label="Усі інструменти"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg></a>
+    <h1>Конвертер відео</h1>
+  </div>
+  <p class="hero-sub">Завантаж відеофайл — сконвертуємо його у формат, який без проблем відкриється й монтується в Adobe Premiere Pro.</p>
+</div>
+
+<form id="convert-form" class="card">
+  <label>Відеофайл
+    <div class="file-input-row">
+      <div class="file-drop-zone" id="file-drop-zone" role="button" tabindex="0" aria-label="Обрати файл">
+        <span class="file-drop-text" id="file-drop-text">Натисніть щоб завантажити або перетягніть сюди</span>
+        <button type="button" class="file-clear-btn" id="file-clear-btn" hidden title="Видалити файл" aria-label="Видалити файл"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+      </div>
+      <input type="file" name="file" id="file-input" accept="video/*" required hidden>
+    </div>
+    <span class="hint">Максимальний розмір файлу: {{ max_upload_mb }} МБ.</span>
+  </label>
+
+  <label class="checkbox-row advanced-toggle-row"><input type="checkbox" id="advanced-toggle"> <span>Розширені налаштування</span></label>
+
+  <div class="advanced-panel" id="advanced-wrap" hidden>
+    <div class="field-group">
+      <span class="field-label">Якість відео</span>
+      <select name="quality" id="quality-select">
+        <option value="high" selected>Оригінальна якість (рекомендовано)</option>
+        <option value="medium">Середня (менший файл)</option>
+        <option value="low">Низька (найменший файл)</option>
+      </select>
+    </div>
+    <div class="field-group">
+      <span class="field-label">Аудіо-доріжка</span>
+      <select name="audio_option" id="audio-select">
+        <option value="original" selected>Оригінальна доріжка (рекомендовано)</option>
+        <option value="aac">Перекодувати в AAC 192 кбіт/с</option>
+        <option value="none">Без звуку</option>
+      </select>
+    </div>
+  </div>
+
+  <button type="submit" class="btn-primary">Конвертувати</button>
+</form>
+
+<div id="status-box"></div>
+
+<h2>Останні конвертації</h2>
+<div class="card dl-list" id="recent-list">
+{% for r in recent %}
+  <div class="dl-row" data-id="{{ r.id }}">
+    <span class="status-icon status-{{ r.status }}">{% if r.status == 'finished' %}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>{% elif r.status == 'error' %}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>{% elif r.status == 'expired' %}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2h4"/><path d="M12 14v-4"/><circle cx="12" cy="14" r="8"/></svg>{% elif r.status == 'cancelled' %}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 8 8 8"/></svg>{% elif r.status == 'converting' %}<span class="spinner"></span>{% elif r.status == 'queued' %}⏳{% else %}–{% endif %}</span>
+    <button type="button" class="dl-title">{{ r.original_filename or "video" }}{% if r.filesize %} ({{ '%.1f МБ'|format(r.filesize / 1048576) if r.filesize < 1048576 else '%.0f МБ'|format(r.filesize / 1048576) }}){% endif %}</button>
+    {% if r.status == 'finished' %}
+      <a class="dl-download-btn" href="/api/convert/file/{{ r.id }}" title="Завантажити"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></a>
+    {% else %}
+      <span class="dl-download-btn disabled" title="Ще не готово"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></span>
+    {% endif %}
+  </div>
+{% else %}
+  <p class="empty-hint">Ще немає конвертацій</p>
+{% endfor %}
+</div>
+<div id="recent-pagination"></div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/converter.js"></script>
+{% endblock %}

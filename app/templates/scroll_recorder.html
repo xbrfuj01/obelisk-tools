@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="hero">
+  <div class="hero-title-row">
+    <a href="/" class="back-link" title="Усі інструменти" aria-label="Усі інструменти"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg></a>
+    <h1>Scroll Recorder</h1>
+  </div>
+  <p class="hero-sub">Вкажи посилання — відкриється попередній перегляд, де можна налаштувати запис і видалити зайві елементи.</p>
+</div>
+
+<div class="card" id="scroll-recorder-form">
+  <label>Посилання на сторінку
+    <input type="url" name="url" id="sr-url" placeholder="https://..." required>
+  </label>
+
+  <button type="button" class="btn-primary" id="sr-preview-btn">Попередній перегляд</button>
+</div>
+
+<div id="status-box"></div>
+
+<div class="editor-overlay" id="editor-overlay" hidden>
+  <div class="editor-stage" id="editor-stage">
+    <img id="editor-screenshot" alt="Попередній перегляд сторінки">
+    <div class="editor-loading" id="editor-loading" hidden><span class="spinner"></span></div>
+    <div class="scroll-bound-line start" id="line-start" hidden></div>
+    <div class="scroll-bound-line end" id="line-end" hidden></div>
+  </div>
+
+  <div class="range-track-wrap">
+    <div class="range-track" id="range-track">
+      <div class="range-track-fill" id="range-track-fill"></div>
+      <div class="range-handle start" id="handle-start" title="Початок запису"></div>
+      <div class="range-handle end" id="handle-end" title="Кінець запису"></div>
+    </div>
+  </div>
+
+  <div class="editor-panel" id="editor-panel">
+    <div class="editor-panel-header" id="editor-panel-header">
+      <span>⚙</span>
+      <button type="button" class="modal-close" id="editor-close" title="Закрити" aria-label="Закрити">&times;</button>
+    </div>
+    <div class="editor-panel-body">
+      <div class="segmented" id="device-segmented">
+        <button type="button" class="segmented-btn" data-value="desktop" aria-pressed="false" title="ПК"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></button>
+        <button type="button" class="segmented-btn" data-value="mobile" aria-pressed="true" title="Телефон (ігнорує співвідношення сторін)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></button>
+      </div>
+
+      <div class="segmented" id="aspect-ratio-segmented" title="Співвідношення сторін (лише для ПК)">
+        <button type="button" class="segmented-btn" data-value="16:9" aria-pressed="true" title="16:9 горизонтальне"><svg width="20" height="12" viewBox="0 0 20 12" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="18" height="10" rx="1.5"/></svg></button>
+        <button type="button" class="segmented-btn" data-value="9:16" aria-pressed="false" title="9:16 вертикальне"><svg width="12" height="20" viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="10" height="18" rx="1.5"/></svg></button>
+        <button type="button" class="segmented-btn" data-value="1:1" aria-pressed="false" title="1:1 квадрат"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="14" height="14" rx="1.5"/></svg></button>
+        <button type="button" class="segmented-btn" data-value="4:5" aria-pressed="false" title="4:5 портрет"><svg width="14" height="17" viewBox="0 0 14 17" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="12" height="15" rx="1.5"/></svg></button>
+      </div>
+
+      <div class="icon-toolbar">
+        <button type="button" class="icon-btn" id="ed-remove-toggle" aria-pressed="false" title="Видалити об'єкт (клік по сторінці)">🗑</button>
+        <button type="button" class="icon-btn" id="ed-remove-header" title="Прибрати верхнє меню сайту">⬒</button>
+        <button type="button" class="icon-btn" id="ed-undo" title="Скасувати видалення">↶</button>
+        <button type="button" class="icon-btn" id="ed-block-ads" aria-pressed="false" title="Блокувати рекламу">🛡</button>
+        <button type="button" class="icon-btn" id="ed-use-proxy" aria-pressed="false" title="Використовувати проксі">🌐</button>
+        <button type="button" class="icon-btn" id="ed-reset-range" title="Скинути межі запису">⭯</button>
+      </div>
+
+      <div class="compact-field" title="Тривалість відео (секунд)">
+        <span>⏱</span>
+        <input type="number" id="ed-duration" min="3" max="300" value="15">
+      </div>
+
+      <div class="segmented" id="framerate-segmented" title="Фреймрейт">
+        <button type="button" class="segmented-btn" data-value="30" aria-pressed="true">30</button>
+        <button type="button" class="segmented-btn" data-value="60" aria-pressed="false">60</button>
+      </div>
+
+      <button type="button" class="btn-primary" id="ed-record" title="Записати">⏺ Записати</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/scroll-recorder.js"></script>
+{% endblock %}

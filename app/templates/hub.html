@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="hero">
+  <h1>Obelisk</h1>
+  <p class="hero-sub">Оберіть інструмент.</p>
+</div>
+
+<div class="tool-grid">
+  <a href="/downloader" class="tool-card">
+    <span class="tool-icon">⬇</span>
+    <span class="tool-name">Завантаження відео</span>
+    <span class="tool-desc">YouTube, Instagram, TikTok, VK та інші сайти — відео, аудіо, субтитри.</span>
+  </a>
+
+  <a href="/converter" class="tool-card">
+    <span class="tool-icon">⇄</span>
+    <span class="tool-name">Конвертер відео</span>
+    <span class="tool-desc">Перекодування відео у формат, сумісний з Adobe Premiere Pro.</span>
+  </a>
+
+  <a href="/metadata" class="tool-card">
+    <span class="tool-icon">◎</span>
+    <span class="tool-name">Редактор метаданих</span>
+    <span class="tool-desc">Перегляд і видалення EXIF/XMP/IPTC та інших метаданих із файлу.</span>
+  </a>
+
+  {% if available.scroll_recorder %}
+  <a href="/scroll-recorder" class="tool-card">
+    <span class="tool-icon">▤</span>
+    <span class="tool-name">Scroll Recorder</span>
+    <span class="tool-desc">Запис плавного скролу сторінки у відео заданого формату.</span>
+  </a>
+  {% endif %}
+</div>
+{% endblock %}

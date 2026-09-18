@@ -1,0 +1,11 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+playwright==1.47.0
+# playwright-stealth imports pkg_resources at module load time but doesn't
+# declare setuptools as a dependency itself, so it must be listed
+# explicitly or the import crashes the whole app on startup. Must be
+# pinned below 82.0.0: setuptools removed pkg_resources entirely as of
+# that release (confirmed via its own NEWS.rst), so an unpinned/latest
+# setuptools still fails the same import with the same error.
+setuptools<82
+playwright-stealth==1.0.6

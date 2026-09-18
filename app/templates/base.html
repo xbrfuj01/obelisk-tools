@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}Obelisk{% endblock %}</title>
+<link rel="icon" type="image/png" href="/static/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+<script>
+(function () {
+  try {
+    var saved = localStorage.getItem("obelisk-theme");
+    if (saved === "light" || saved === "dark") {
+      document.documentElement.dataset.theme = saved;
+    }
+  } catch (err) {}
+})();
+</script>
+</head>
+<body>
+<div class="bg-glow"></div>
+<button type="button" class="theme-toggle-btn" id="theme-toggle-btn" title="Тема оформлення" aria-label="Тема оформлення"></button>
+<header class="topbar">
+  <a href="/" class="brand"><span class="brand-icon">◆</span> Obelisk</a>
+  <nav>
+    <div class="processes-wrap" id="processes-wrap">
+      <button type="button" class="processes-btn" id="processes-btn" title="Процеси" aria-label="Процеси">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        <span class="processes-badge" id="processes-badge" hidden>0</span>
+      </button>
+      <div class="processes-panel" id="processes-panel" hidden>
+        <div class="processes-panel-header">Процеси</div>
+        <div class="processes-list" id="processes-list"></div>
+      </div>
+    </div>
+    {% if is_admin_request(request) %}
+    <div class="processes-wrap" id="admin-processes-wrap">
+      <button type="button" class="processes-btn" id="admin-processes-btn" title="Процеси всіх користувачів" aria-label="Процеси всіх користувачів">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span class="processes-badge" id="admin-processes-badge" hidden>0</span>
+      </button>
+      <div class="processes-panel" id="admin-processes-panel" hidden>
+        <div class="processes-panel-header">Процеси всіх користувачів</div>
+        <div class="processes-list" id="admin-processes-list"></div>
+      </div>
+    </div>
+    <a href="/admin" class="admin-link" title="Адмін-панель" aria-label="Адмін-панель"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></a>
+    {% endif %}
+  </nav>
+</header>
+<main class="container">
+{% block content %}{% endblock %}
+</main>
+
+<div class="modal-overlay" id="notification-modal" hidden>
+  <div class="modal-box">
+    <button type="button" class="modal-close" id="notification-modal-close" aria-label="Закрити">&times;</button>
+    <h3>Сповіщення</h3>
+    <p id="notification-modal-message"></p>
+    <div class="modal-actions">
+      <button type="button" class="btn-primary" id="notification-modal-ok">Гаразд</button>
+    </div>
+  </div>
+</div>
+
+{% block scripts %}{% endblock %}
+<script src="/static/theme-toggle.js"></script>
+<script src="/static/processes.js"></script>
+<script src="/static/notifications.js"></script>
+</body>
+</html>

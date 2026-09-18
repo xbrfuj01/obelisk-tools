@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="hero">
+  <div class="hero-title-row">
+    <a href="/" class="back-link" title="Усі інструменти" aria-label="Усі інструменти"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg></a>
+    <h1>Завантаження відео</h1>
+  </div>
+  <p class="hero-sub">Встав посилання з YouTube, Instagram, VK, TikTok та інших сайтів — обери формат і завантаж.</p>
+</div>
+
+<form id="download-form" class="card">
+  <label>Посилання
+    <div class="input-with-status">
+      <input type="url" name="url" id="url-input" placeholder="https://..." required autocomplete="off">
+      <button type="button" id="url-clear-btn" class="url-clear-btn" hidden aria-label="Очистити посилання">✕</button>
+      <span id="url-status" class="url-status"></span>
+    </div>
+  </label>
+
+  <div class="field-group">
+    <span class="field-label">Тип завантаження</span>
+    <div class="segmented" id="mode-segmented">
+      <label class="segment"><input type="radio" name="mode" value="video" checked><span>Відео + аудіо</span></label>
+      <label class="segment"><input type="radio" name="mode" value="video_only"><span>Лише відео</span></label>
+      <label class="segment"><input type="radio" name="mode" value="audio"><span>Лише аудіо</span></label>
+    </div>
+  </div>
+
+  <div class="grid-3">
+    <div id="quality-wrap" class="field-group">
+      <span class="field-label">Якість</span>
+      <select name="quality" id="quality-select">
+        <option value="best">Найкраща доступна</option>
+      </select>
+      <span class="hint" id="quality-hint"></span>
+    </div>
+
+    <div id="container-wrap" class="field-group">
+      <span class="field-label">Формат файлу</span>
+      <select name="container" id="container-select">
+        <option value="mp4">MP4</option>
+        <option value="webm">WebM</option>
+        <option value="mkv">MKV</option>
+      </select>
+    </div>
+
+    <div class="field-group" id="subtitles-wrap">
+      <span class="field-label">Субтитри</span>
+      <select name="subtitle_lang" id="subtitle-select">
+        <option value="">Без субтитрів</option>
+      </select>
+      <span class="hint" id="subtitle-hint"></span>
+    </div>
+  </div>
+
+  <div class="field-group">
+    <span class="field-label">Таймкоди (завантажити лише фрагмент відео)</span>
+    <div class="grid-2" id="clip-wrap">
+      <div class="field-group">
+        <span class="field-label">Початок</span>
+        <input type="text" name="clip_start" id="clip-start-input" placeholder="00:00:00" autocomplete="off">
+      </div>
+      <div class="field-group">
+        <span class="field-label">Кінець</span>
+        <input type="text" name="clip_end" id="clip-end-input" placeholder="99:99:99" autocomplete="off">
+      </div>
+    </div>
+    <span class="hint" id="clip-hint">Відео обріжеться лише для полів, які ви змінили. Незмінене поле означає "від початку" / "до кінця".</span>
+  </div>
+
+  <label class="checkbox-row" id="premiere-compat-wrap"><input type="checkbox" name="premiere_compat" id="premiere-compat-input" checked> <span>Сумісність з відеоредакторами (якщо потрібно — файл буде автоматично сконвертовано після завантаження)</span></label>
+
+  <button type="submit" class="btn-primary">Завантажити</button>
+</form>
+
+<div id="status-box"></div>
+
+<h2>Останні завантаження</h2>
+<div class="card dl-list" id="recent-list">
+{% for r in recent %}
+  <div class="dl-row" data-id="{{ r.id }}">
+    <span class="status-icon status-{{ r.status }}">{% if r.status == 'finished' %}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>{% elif r.status == 'error' %}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>{% elif r.status == 'expired' %}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2h4"/><path d="M12 14v-4"/><circle cx="12" cy="14" r="8"/></svg>{% elif r.status == 'cancelled' %}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 8 8 8"/></svg>{% elif r.status == 'downloading' %}<span class="spinner"></span>{% elif r.status == 'queued' %}⏳{% else %}–{% endif %}</span>
+    <button type="button" class="dl-title">{{ r.title or r.url }}{% if r.filesize %} ({{ '%.1f МБ'|format(r.filesize / 1048576) if r.filesize < 1048576 else '%.0f МБ'|format(r.filesize / 1048576) }}){% endif %}</button>
+    {% if r.url %}<a class="dl-source-btn" href="{{ r.url }}" target="_blank" rel="noopener noreferrer" title="Відкрити оригінал" aria-label="Відкрити оригінал"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>{% endif %}
+    {% if r.status == 'finished' %}
+      {% if not r.premiere_compat %}
+      <a class="dl-convert-btn" href="/converter?from_download={{ r.id }}&filename={{ (r.title or r.url)|urlencode }}" title="Конвертувати для Premiere"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h11l-3.5-3.5"/><path d="M17 17H6l3.5 3.5"/></svg></a>
+      {% endif %}
+      <a class="dl-download-btn" href="/api/file/{{ r.id }}" title="Завантажити"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></a>
+    {% else %}
+      <span class="dl-download-btn disabled" title="Ще не готово"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></span>
+    {% endif %}
+  </div>
+{% else %}
+  <p class="empty-hint">Ще немає завантажень</p>
+{% endfor %}
+</div>
+<div id="recent-pagination"></div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/app.js"></script>
+{% endblock %}
