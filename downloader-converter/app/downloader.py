@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 
 import yt_dlp
 
-from . import auth, config
+from . import config, settings_store
 from .database import SessionLocal
 from .models import Download
 
@@ -353,7 +353,7 @@ def _extract_with_cookie_fallback(ydl_opts, url, *, download, should_retry=lambd
                 info = ydl.extract_info(url, download=download)
         return info, False
     except Exception:
-        cookies_path = auth.get_cookies_path()
+        cookies_path = config.get_cookies_path()
         if not cookies_path or ydl_opts.get("cookiefile") or not should_retry():
             raise
         if before_retry:
@@ -372,9 +372,9 @@ def _extract_with_cookie_fallback(ydl_opts, url, *, download, should_retry=lambd
         return info, True
 
 
-def probe_qualities(url: str, db):
+def probe_qualities(url: str):
     """Fetch the real (width x height) resolutions and subtitle languages available for this URL."""
-    if not is_url_allowed(url, db):
+    if not is_url_allowed(url):
         raise RuntimeError("Це посилання вказує на заборонену адресу")
     ydl_opts = {
         "quiet": True,
@@ -386,8 +386,8 @@ def probe_qualities(url: str, db):
         "skip_download": True,
         "extractor_args": YOUTUBE_EXTRACTOR_ARGS,
     }
-    if _should_use_proxy(url, db):
-        ydl_opts["proxy"] = auth.get_proxy_url(db)
+    if _should_use_proxy(url):
+        ydl_opts["proxy"] = settings_store.get("proxy_url", "")
     info, _ = _extract_with_cookie_fallback(ydl_opts, url, download=False)
 
     # dedupe by height only: several formats (different codecs/bitrates) often
@@ -441,11 +441,11 @@ def _source_from_url(url: str) -> str:
         return "unknown"
 
 
-def _should_use_proxy(url: str, db) -> bool:
-    proxy_url = auth.get_proxy_url(db)
+def _should_use_proxy(url: str) -> bool:
+    proxy_url = settings_store.get("proxy_url", "")
     if not proxy_url:
         return False
-    domains = auth.get_proxy_domains(db)
+    domains = settings_store.get("proxy_domains", [])
     if not domains:
         return True
     source = _source_from_url(url)
@@ -489,11 +489,11 @@ def _is_safe_direct_url(url: str) -> bool:
         return False
 
 
-def is_url_allowed(url: str, db) -> bool:
+def is_url_allowed(url: str) -> bool:
     # Proxied domains are a small admin-curated allowlist (not attacker
     # controlled) and are resolved remotely by the proxy anyway, so the
     # local SSRF check doesn't apply to them.
-    if _should_use_proxy(url, db):
+    if _should_use_proxy(url):
         return True
     return _is_safe_direct_url(url)
 
@@ -600,7 +600,7 @@ def _run_job(job_id: str):
         db.close()
         return
 
-    limit = auth.get_max_concurrent_downloads(db)
+    limit = settings_store.get("max_concurrent_downloads", 2)
     _gate.acquire(limit)
     try:
         if job_id in _cancel_requested:
@@ -609,7 +609,7 @@ def _run_job(job_id: str):
             _update(db, job, status="cancelled", eta_seconds=None, finished_at=datetime.utcnow())
             return
 
-        if not is_url_allowed(job.url, db):
+        if not is_url_allowed(job.url):
             raise RuntimeError("Це посилання вказує на заборонену адресу")
 
         _update(db, job, status="downloading")
@@ -636,8 +636,8 @@ def _run_job(job_id: str):
             "progress_hooks": [lambda d: _progress_hook(job_id, d, progress_state)],
             "extractor_args": YOUTUBE_EXTRACTOR_ARGS,
         }
-        if _should_use_proxy(job.url, db):
-            ydl_opts["proxy"] = auth.get_proxy_url(db)
+        if _should_use_proxy(job.url):
+            ydl_opts["proxy"] = settings_store.get("proxy_url", "")
 
         if job.clip_start is not None or job.clip_end is not None:
             from yt_dlp.utils import download_range_func

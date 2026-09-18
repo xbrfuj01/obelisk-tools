@@ -7,16 +7,34 @@ services:
       - "30301:30301"
     volumes:
       - /mnt/apps/obelisk/data:/data
-      - /mnt/apps/obelisk/downloads:/downloads
+    restart: unless-stopped
+    depends_on:
+      - downloader-converter
+      - scroll-recorder
+      - metadata
+
+  # YouTube/other-site video downloader + ffmpeg converter, in one module
+  # container (they share a real coupling - the "convert after download"
+  # auto-flow - so splitting them further would just mean inventing a
+  # cross-module protocol for it). Owns its own DB/downloads volume; core
+  # has no direct DB access to it anymore, only the HTTP API below. Reads
+  # core's cookies.txt over a read-only mount instead of a settings-sync
+  # round trip, since it's already just a bind-mounted file. Generates
+  # YouTube's "proof of origin" tokens via bgutil-provider - without that,
+  # YouTube forces SABR (no usable format URL) on every client this module
+  # uses, regardless of which one.
+  downloader-converter:
+    image: ghcr.io/xbrfuj01/obelisk-downloader-converter:latest
+    pull_policy: always
+    container_name: obelisk-downloader-converter
+    volumes:
+      - /mnt/apps/obelisk/downloader-converter-data:/data
+      - /mnt/apps/obelisk/downloader-converter-downloads:/downloads
+      - /mnt/apps/obelisk/data:/core-data:ro
     restart: unless-stopped
     depends_on:
       - bgutil-provider
-      - scroll-recorder
 
-  # Generates YouTube's "proof of origin" tokens for yt-dlp - without this,
-  # YouTube forces SABR (no usable format URL) on every client this app
-  # uses, regardless of which one. obelisk reaches it over the compose
-  # network as "bgutil-provider" (see downloader.py's extractor_args).
   bgutil-provider:
     image: brainicism/bgutil-ytdlp-pot-provider:latest
     pull_policy: always
@@ -34,4 +52,16 @@ services:
     container_name: obelisk-scroll-recorder
     volumes:
       - /mnt/apps/obelisk/scroll-recorder:/data
+    restart: unless-stopped
+
+  # Metadata (EXIF/XMP/IPTC) editor - stateless, own container so its
+  # ExifTool dependency doesn't need to live in the main image. No published
+  # port, reached only over the compose network as "metadata" (see
+  # config.py's METADATA_URL), proxied into the main UI at /metadata.
+  metadata:
+    image: ghcr.io/xbrfuj01/obelisk-metadata:latest
+    pull_policy: always
+    container_name: obelisk-metadata
+    volumes:
+      - /mnt/apps/obelisk/metadata:/downloads
     restart: unless-stopped

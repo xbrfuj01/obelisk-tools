@@ -1,40 +1,23 @@
 import os
-import re
-import shutil
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from fastapi import (
-    BackgroundTasks, FastAPI, File, Request, Response, Form, Depends, HTTPException, UploadFile,
+    FastAPI, File, Request, Response, Form, Depends, HTTPException, UploadFile,
 )
 from fastapi.responses import (
-    HTMLResponse, RedirectResponse, FileResponse, JSONResponse,
+    HTMLResponse, RedirectResponse, JSONResponse,
 )
 from starlette.staticfiles import StaticFiles as _StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
-from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from . import config
 from .database import init_db, SessionLocal
-from .models import Conversion, Download, Notification, User
+from .models import Notification, User
 from . import auth
-from . import converter
-from . import metadata_tool
-from .downloader import (
-    submit_job,
-    _source_from_url,
-    probe_qualities,
-    is_url_allowed,
-    clear_ytdlp_cache,
-    parse_timecode,
-    request_cancel as request_download_cancel,
-    check_proxy_connection,
-)
-from .cleanup import start_cleanup_thread, wipe_all_data
 from . import timeutil
-from . import stats as stats_module
 from . import sysinfo
 from . import modules
 from . import proxy as proxy_helpers
@@ -116,17 +99,29 @@ def get_db():
 
 CLIENT_ID_COOKIE = "client_id"
 CLIENT_ID_MAX_AGE = 60 * 60 * 24 * 400  # ~400 days
-RECENT_PAGE_SIZE = 10
 
 
-def get_client_id(request: Request, response: Response) -> str:
+def _client_id_and_flag(request: Request):
+    """Read-only half of the client_id cookie dance - doesn't touch any
+    Response, since most callers here return a proxied Response object
+    directly (not a plain dict), and FastAPI only merges an injected
+    `response: Response` parameter's cookies into the final response when
+    the route returns non-Response data for it to wrap. Returning our own
+    Response bypasses that merge silently, so the cookie has to be set on
+    the actual object being returned instead - see _with_client_id_cookie."""
     client_id = request.cookies.get(CLIENT_ID_COOKIE)
-    if not client_id:
+    is_new = not client_id
+    if is_new:
         client_id = uuid.uuid4().hex
-        response.set_cookie(
+    return client_id, is_new
+
+
+def _with_client_id_cookie(resp, client_id: str, is_new: bool):
+    if is_new:
+        resp.set_cookie(
             CLIENT_ID_COOKIE, client_id, max_age=CLIENT_ID_MAX_AGE, httponly=True, samesite="lax"
         )
-    return client_id
+    return resp
 
 
 def require_site_access_page(request: Request, db: Session = Depends(get_db)):
@@ -147,8 +142,8 @@ def require_admin_dep(request: Request, db: Session = Depends(get_db)):
 
 @app.on_event("startup")
 def on_startup():
-    start_cleanup_thread()
     modules.start_health_check_thread()
+    modules.push_downloader_converter_config()
 
 
 # ---------------- Public ----------------
@@ -161,20 +156,21 @@ def hub(request: Request, _=Depends(require_site_access_page)):
 
 
 @app.get("/downloader", response_class=HTMLResponse)
-def downloader_page(request: Request, db: Session = Depends(get_db), _=Depends(require_site_access_page)):
+async def downloader_page(request: Request, _=Depends(require_site_access_page)):
+    if not modules.is_module_available("downloader_converter"):
+        return RedirectResponse("/", status_code=303)
     client_id = request.cookies.get(CLIENT_ID_COOKIE)
     is_new_client = not client_id
     if is_new_client:
         client_id = uuid.uuid4().hex
 
-    recent = (
-        db.query(Download)
-        .filter(Download.client_id == client_id)
-        .order_by(Download.created_at.desc())
-        .limit(RECENT_PAGE_SIZE)
-        .all()
+    data = await proxy_helpers.fetch_json(
+        config.DOWNLOADER_CONVERTER_URL, "/jobs/download",
+        params={"client_id": client_id, "page": 1}, default={},
     )
-    resp = templates.TemplateResponse("downloader.html", {"request": request, "recent": recent})
+    resp = templates.TemplateResponse(
+        "downloader.html", {"request": request, "recent": data.get("items", [])}
+    )
     if is_new_client:
         resp.set_cookie(
             CLIENT_ID_COOKIE, client_id, max_age=CLIENT_ID_MAX_AGE, httponly=True, samesite="lax"
@@ -183,22 +179,21 @@ def downloader_page(request: Request, db: Session = Depends(get_db), _=Depends(r
 
 
 @app.get("/converter", response_class=HTMLResponse)
-def converter_page(request: Request, db: Session = Depends(get_db), _=Depends(require_site_access_page)):
+async def converter_page(request: Request, db: Session = Depends(get_db), _=Depends(require_site_access_page)):
+    if not modules.is_module_available("downloader_converter"):
+        return RedirectResponse("/", status_code=303)
     client_id = request.cookies.get(CLIENT_ID_COOKIE)
     is_new_client = not client_id
     if is_new_client:
         client_id = uuid.uuid4().hex
 
-    recent = (
-        db.query(Conversion)
-        .filter(Conversion.client_id == client_id)
-        .order_by(Conversion.created_at.desc())
-        .limit(RECENT_PAGE_SIZE)
-        .all()
+    data = await proxy_helpers.fetch_json(
+        config.DOWNLOADER_CONVERTER_URL, "/jobs/convert",
+        params={"client_id": client_id, "page": 1}, default={},
     )
     resp = templates.TemplateResponse(
         "converter.html",
-        {"request": request, "recent": recent, "max_upload_mb": auth.get_max_upload_mb(db)},
+        {"request": request, "recent": data.get("items", []), "max_upload_mb": auth.get_max_upload_mb(db)},
     )
     if is_new_client:
         resp.set_cookie(
@@ -209,6 +204,8 @@ def converter_page(request: Request, db: Session = Depends(get_db), _=Depends(re
 
 @app.get("/metadata", response_class=HTMLResponse)
 def metadata_page(request: Request, db: Session = Depends(get_db), _=Depends(require_site_access_page)):
+    if not modules.is_module_available("metadata"):
+        return RedirectResponse("/", status_code=303)
     return templates.TemplateResponse(
         "metadata.html", {"request": request, "max_upload_mb": auth.get_max_upload_mb(db)}
     )
@@ -327,15 +324,23 @@ async def cancel_scroll_recorder_preview(session_id: str, _=Depends(require_site
 @app.get("/api/scroll-recorder/jobs/{job_id}/file")
 async def scroll_recorder_file(job_id: str, _=Depends(require_site_access_api)):
     return await proxy_helpers.proxy_file_stream(
-        config.SCROLL_RECORDER_URL, f"/jobs/{job_id}/file", "scroll-recording.mp4", "video/mp4",
+        config.SCROLL_RECORDER_URL, f"/jobs/{job_id}/file",
         unavailable_message="Модуль запису недоступний",
     )
 
 
+# ---------------- Downloader + Converter ----------------
+# Both run together in their own module container (docker-compose.yml),
+# with their own DB (Download/Conversion rows no longer live in core's) -
+# core does auth/rate-limiting/client-id here, then proxies through to it,
+# the same pattern as Scroll Recorder and the metadata editor. URL/settings
+# validation (is_url_allowed, proxy resolution, concurrency limits) all
+# happens module-side now, since that's where the relevant settings
+# (pushed via modules.push_downloader_converter_config) actually live.
+
 @app.post("/api/download")
-def create_download(
+async def create_download(
     request: Request,
-    response: Response,
     url: str = Form(...),
     mode: str = Form("video"),
     quality: str = Form("best"),
@@ -344,101 +349,55 @@ def create_download(
     premiere_compat: bool = Form(False),
     clip_start: str = Form(""),
     clip_end: str = Form(""),
-    db: Session = Depends(get_db),
     _=Depends(require_site_access_api),
 ):
-    client_id = get_client_id(request, response)
+    client_id, is_new = _client_id_and_flag(request)
     ip = request.client.host if request.client else "unknown"
 
     url = url.strip()
     if not url.startswith(("http://", "https://")):
         return JSONResponse({"error": "Некоректне посилання"}, status_code=400)
-    if not is_url_allowed(url, db):
-        return JSONResponse({"error": "Це посилання вказує на заборонену адресу"}, status_code=400)
     if not auth.check_download_rate_limit(f"dl:{ip}"):
         return JSONResponse(
             {"error": "Забагато завантажень поспіль. Спробуйте пізніше."}, status_code=429
         )
-    if mode not in ("video", "video_only", "audio"):
-        mode = "video"
 
-    clip_start_sec = parse_timecode(clip_start)
-    clip_end_sec = parse_timecode(clip_end)
-    if clip_start and clip_start_sec is None:
-        return JSONResponse({"error": "Некоректний початковий таймкод"}, status_code=400)
-    if clip_end and clip_end_sec is None:
-        return JSONResponse({"error": "Некоректний кінцевий таймкод"}, status_code=400)
-    if clip_start_sec is not None and clip_end_sec is not None and clip_end_sec <= clip_start_sec:
-        return JSONResponse({"error": "Кінцевий таймкод має бути більшим за початковий"}, status_code=400)
-
-    job = Download(
-        url=url,
-        source=_source_from_url(url),
-        mode=mode,
-        quality=quality,
-        container=container,
-        subtitle_lang=subtitle_lang.strip() or None,
-        premiere_compat=1 if premiere_compat else 0,
-        clip_start=clip_start_sec,
-        clip_end=clip_end_sec,
-        status="queued",
-        client_ip=request.client.host if request.client else None,
-        client_id=client_id,
-        username=request.session.get("site_username"),
+    body = {
+        "url": url, "mode": mode, "quality": quality, "container": container,
+        "subtitle_lang": subtitle_lang, "premiere_compat": premiere_compat,
+        "clip_start": clip_start, "clip_end": clip_end,
+        "client_id": client_id,
+        "client_ip": request.client.host if request.client else None,
+        "username": request.session.get("site_username"),
+    }
+    resp = await proxy_helpers.proxy_json(
+        config.DOWNLOADER_CONVERTER_URL, "POST", "/jobs/download", json_body=body, timeout=30,
+        unavailable_message="Модуль завантажень недоступний",
     )
-    db.add(job)
-    db.commit()
-    db.refresh(job)
-
-    submit_job(job.id)
-    return {"id": job.id}
+    return _with_client_id_cookie(resp, client_id, is_new)
 
 
 @app.get("/api/status/{job_id}")
-def job_status(job_id: str, db: Session = Depends(get_db), _=Depends(require_site_access_api)):
-    job = db.get(Download, job_id)
-    if not job:
-        return JSONResponse({"error": "not found"}, status_code=404)
-    return {
-        "id": job.id,
-        "status": job.status,
-        "progress": job.progress,
-        "eta_seconds": job.eta_seconds,
-        "title": job.title,
-        "error": job.error_message,
-        "filesize": job.filesize,
-        "auto_convert_id": job.auto_convert_id,
-        "premiere_compat": bool(job.premiere_compat),
-    }
+async def job_status(job_id: str, _=Depends(require_site_access_api)):
+    return await proxy_helpers.proxy_json(
+        config.DOWNLOADER_CONVERTER_URL, "GET", f"/jobs/download/{job_id}",
+        unavailable_message="Модуль завантажень недоступний",
+    )
 
 
 @app.post("/api/cancel/{job_id}")
-def cancel_download(
-    job_id: str,
-    request: Request,
-    response: Response,
-    db: Session = Depends(get_db),
-    _=Depends(require_site_access_api),
-):
-    job = db.get(Download, job_id)
-    client_id = get_client_id(request, response)
-    if not job or job.client_id != client_id:
-        return JSONResponse({"error": "not found"}, status_code=404)
-    if job.status not in ("queued", "downloading"):
-        return JSONResponse({"error": "already finished"}, status_code=400)
-    request_download_cancel(job_id)
-    if job.status == "queued":
-        # Still waiting for a slot - nothing running yet to catch the flag,
-        # so reflect the cancellation immediately instead of waiting for its
-        # turn to come up and notice on its own.
-        job.status = "cancelled"
-        job.finished_at = datetime.utcnow()
-        db.commit()
-    return {"ok": True}
+async def cancel_download(job_id: str, request: Request, _=Depends(require_site_access_api)):
+    client_id, is_new = _client_id_and_flag(request)
+    resp = await proxy_helpers.proxy_json(
+        config.DOWNLOADER_CONVERTER_URL, "POST", f"/jobs/download/{job_id}/cancel",
+        json_body={"client_id": client_id},
+        unavailable_message="Модуль завантажень недоступний",
+    )
+    return _with_client_id_cookie(resp, client_id, is_new)
 
 
 @app.get("/api/formats")
-def get_formats(request: Request, url: str, db: Session = Depends(get_db), _=Depends(require_site_access_api)):
+async def get_formats(request: Request, url: str, _=Depends(require_site_access_api)):
     ip = request.client.host if request.client else "unknown"
     if not auth.check_download_rate_limit(f"fmt:{ip}"):
         return JSONResponse(
@@ -447,174 +406,53 @@ def get_formats(request: Request, url: str, db: Session = Depends(get_db), _=Dep
     url = url.strip()
     if not url.startswith(("http://", "https://")):
         return JSONResponse({"error": "Некоректне посилання"}, status_code=400)
-    if not is_url_allowed(url, db):
-        return JSONResponse({"error": "Це посилання вказує на заборонену адресу"}, status_code=400)
-    try:
-        return probe_qualities(url, db)
-    except Exception as e:
-        return JSONResponse({"error": str(e)[:300]}, status_code=400)
+    return await proxy_helpers.proxy_json(
+        config.DOWNLOADER_CONVERTER_URL, "GET", "/jobs/formats", params={"url": url}, timeout=30,
+        unavailable_message="Модуль завантажень недоступний",
+    )
 
 
 @app.get("/api/recent")
-def recent_jobs(
-    request: Request,
-    response: Response,
-    page: int = 1,
-    db: Session = Depends(get_db),
-    _=Depends(require_site_access_api),
-):
-    client_id = get_client_id(request, response)
-    page = max(1, page)
-    total = db.query(func.count(Download.id)).filter(Download.client_id == client_id).scalar()
-    total_pages = max(1, -(-total // RECENT_PAGE_SIZE))
-    page = min(page, total_pages)
-    rows = (
-        db.query(Download)
-        .filter(Download.client_id == client_id)
-        .order_by(Download.created_at.desc())
-        .offset((page - 1) * RECENT_PAGE_SIZE)
-        .limit(RECENT_PAGE_SIZE)
-        .all()
+async def recent_jobs(request: Request, page: int = 1, _=Depends(require_site_access_api)):
+    client_id, is_new = _client_id_and_flag(request)
+    resp = await proxy_helpers.proxy_json(
+        config.DOWNLOADER_CONVERTER_URL, "GET", "/jobs/download",
+        params={"client_id": client_id, "page": page},
+        unavailable_message="Модуль завантажень недоступний",
     )
-    return {
-        "items": [
-            {
-                "id": r.id,
-                "title": r.title or r.url,
-                "url": r.url,
-                "status": r.status,
-                "progress": r.progress,
-                "source": r.source,
-                "mode": r.mode,
-                "filesize": r.filesize,
-                "premiere_compat": bool(r.premiere_compat),
-            }
-            for r in rows
-        ],
-        "page": page,
-        "total_pages": total_pages,
-    }
-
-
-CANCELLED_HIDE_AFTER_SECONDS = 30
-
-
-def _hide_stale_cancelled(query, model):
-    """A cancelled job is already fully cleaned up server-side the moment it
-    happens - there's nothing left to act on, so leaving it sitting in the
-    tray is just clutter. Kept visible for a short window so the person who
-    just clicked cancel sees it register, then drops out on its own."""
-    cutoff = datetime.utcnow() - timedelta(seconds=CANCELLED_HIDE_AFTER_SECONDS)
-    return query.filter(or_(model.status != "cancelled", model.finished_at >= cutoff))
+    return _with_client_id_cookie(resp, client_id, is_new)
 
 
 @app.get("/api/processes")
-def processes(
-    request: Request,
-    response: Response,
-    db: Session = Depends(get_db),
-    _=Depends(require_site_access_api),
-):
+async def processes(request: Request, response: Response, _=Depends(require_site_access_api)):
     """Combined active + recent downloads/conversions for the top-right
     processes tray - kept in one feed (rather than two) so it reads as a
-    single timeline regardless of which tool the job came from."""
-    client_id = get_client_id(request, response)
-    # "Прострочені" (expired - the file was cleaned up by the retention
-    # sweep) jobs are done and gone, not something still worth downloading -
-    # only ready-to-download or in-progress work belongs in this tray.
-    downloads = _hide_stale_cancelled(
-        db.query(Download).filter(Download.client_id == client_id, Download.status != "expired"),
-        Download,
-    ).order_by(Download.created_at.desc()).limit(20).all()
-    conversions = _hide_stale_cancelled(
-        db.query(Conversion).filter(Conversion.client_id == client_id, Conversion.status != "expired"),
-        Conversion,
-    ).order_by(Conversion.created_at.desc()).limit(20).all()
-    items = [
-        {
-            "id": r.id,
-            "kind": "download",
-            "title": r.title or r.url,
-            "status": r.status,
-            "progress": r.progress,
-            "eta_seconds": r.eta_seconds,
-            "filesize": r.filesize,
-            "created_at": r.created_at.isoformat(),
-            "auto_convert_id": r.auto_convert_id,
-        }
-        for r in downloads
-    ] + [
-        {
-            "id": r.id,
-            "kind": "conversion",
-            "title": r.original_filename or "video",
-            "status": r.status,
-            "progress": r.progress,
-            "eta_seconds": r.eta_seconds,
-            "filesize": r.filesize,
-            "created_at": r.created_at.isoformat(),
-        }
-        for r in conversions
-    ]
-    items.sort(key=lambda it: it["created_at"], reverse=True)
-    return items[:20]
+    single timeline regardless of which tool the job came from. Falls back
+    to an empty tray (rather than an error) if the module is unreachable.
+    fetch_json returns plain data (not a Response), so - unlike most other
+    routes here - FastAPI does merge this injected `response`'s cookie into
+    the final response automatically."""
+    client_id, is_new = _client_id_and_flag(request)
+    if is_new:
+        response.set_cookie(
+            CLIENT_ID_COOKIE, client_id, max_age=CLIENT_ID_MAX_AGE, httponly=True, samesite="lax"
+        )
+    return await proxy_helpers.fetch_json(
+        config.DOWNLOADER_CONVERTER_URL, "/jobs/processes", params={"client_id": client_id}, default=[],
+    )
 
 
 @app.get("/api/file/{job_id}")
-def download_file(job_id: str, db: Session = Depends(get_db), _=Depends(require_site_access_api)):
-    job = db.get(Download, job_id)
-    if not job or job.status != "finished" or not job.filepath or not os.path.exists(job.filepath):
-        return JSONResponse({"error": "Файл недоступний"}, status_code=404)
-    filename = os.path.basename(job.filepath)
-    return FileResponse(job.filepath, filename=filename)
-
-
-# ---------------- Video converter ----------------
-
-CONVERT_QUALITIES = {"high", "medium", "low"}
-CONVERT_AUDIO_OPTIONS = {"aac", "original", "none"}
-
-
-def _finalize_conversion(db, request, response, job_id, input_path, original_name, quality, audio_option):
-    """Shared by /api/convert (browser upload) and /api/convert/from-download
-    (reuses an already-downloaded file): probes the file already sitting at
-    input_path, creates the Conversion row, and kicks off the background
-    job. Returns (json_result, None) on success or (None, error_response)."""
-    job_dir = os.path.dirname(input_path)
-    if quality not in CONVERT_QUALITIES:
-        quality = "high"
-    if audio_option not in CONVERT_AUDIO_OPTIONS:
-        audio_option = "original"
-
-    info = converter.probe_input(input_path)
-    if not info:
-        shutil.rmtree(job_dir, ignore_errors=True)
-        return None, JSONResponse({"error": "Не вдалося розпізнати відеофайл"}, status_code=400)
-
-    client_id = get_client_id(request, response)
-    job = Conversion(
-        id=job_id,
-        original_filename=original_name,
-        input_summary=info["summary"],
-        duration_seconds=info["duration"],
-        quality=quality,
-        audio_option=audio_option,
-        status="queued",
-        client_ip=request.client.host if request.client else None,
-        client_id=client_id,
-        username=request.session.get("site_username"),
+async def download_file(job_id: str, _=Depends(require_site_access_api)):
+    return await proxy_helpers.proxy_file_stream(
+        config.DOWNLOADER_CONVERTER_URL, f"/jobs/download/{job_id}/file",
+        unavailable_message="Модуль завантажень недоступний",
     )
-    db.add(job)
-    db.commit()
-
-    converter.submit_job(job_id, input_path, info)
-    return {"id": job.id, "input_summary": job.input_summary, "duration_seconds": job.duration_seconds}, None
 
 
 @app.post("/api/convert")
 async def create_conversion(
     request: Request,
-    response: Response,
     file: UploadFile = File(...),
     quality: str = Form("high"),
     audio_option: str = Form("original"),
@@ -626,171 +464,89 @@ async def create_conversion(
         return JSONResponse(
             {"error": "Забагато конвертацій поспіль. Спробуйте пізніше."}, status_code=429
         )
-
-    job_id = uuid.uuid4().hex
-    job_dir = os.path.join(config.DOWNLOAD_DIR, "converts", job_id)
-    os.makedirs(job_dir, exist_ok=True)
-
-    original_name = file.filename or "video"
-    ext = os.path.splitext(original_name)[1][:10] or ".bin"
-    input_path = os.path.join(job_dir, f"input{ext}")
-
-    max_bytes = auth.get_max_upload_mb(db) * 1024 * 1024
-    total = 0
-    too_large = False
-    with open(input_path, "wb") as out:
-        while True:
-            chunk = await file.read(1024 * 1024)
-            if not chunk:
-                break
-            total += len(chunk)
-            if total > max_bytes:
-                too_large = True
-                break
-            out.write(chunk)
-    if too_large:
-        shutil.rmtree(job_dir, ignore_errors=True)
-        return JSONResponse(
-            {"error": f"Файл перевищує ліміт {auth.get_max_upload_mb(db)} МБ"}, status_code=413
-        )
-
-    result, error_resp = _finalize_conversion(
-        db, request, response, job_id, input_path, original_name, quality, audio_option
+    client_id, is_new = _client_id_and_flag(request)
+    max_upload_mb = auth.get_max_upload_mb(db)
+    resp = await proxy_helpers.proxy_upload(
+        config.DOWNLOADER_CONVERTER_URL, "/jobs/convert", file, max_upload_mb * 1024 * 1024,
+        os.path.join(config.DATA_DIR, "tmp_uploads"),
+        extra_fields={
+            "quality": quality, "audio_option": audio_option, "client_id": client_id,
+            "client_ip": ip, "username": request.session.get("site_username") or "",
+        },
+        too_large_message=f"Файл перевищує ліміт {max_upload_mb} МБ",
+        unavailable_message="Модуль конвертера недоступний",
     )
-    return error_resp if error_resp else result
+    return _with_client_id_cookie(resp, client_id, is_new)
 
 
 @app.post("/api/convert/from-download/{download_id}")
-def create_conversion_from_download(
+async def create_conversion_from_download(
     download_id: str,
     request: Request,
-    response: Response,
     quality: str = Form("high"),
     audio_option: str = Form("original"),
-    db: Session = Depends(get_db),
     _=Depends(require_site_access_api),
 ):
-    src = db.get(Download, download_id)
-    if not src or src.status != "finished" or not src.filepath or not os.path.exists(src.filepath):
-        return JSONResponse({"error": "Вихідний файл недоступний"}, status_code=404)
-    if src.client_id != get_client_id(request, response):
-        return JSONResponse({"error": "Вихідний файл недоступний"}, status_code=404)
-
     ip = request.client.host if request.client else "unknown"
     if not auth.check_download_rate_limit(f"cv:{ip}"):
         return JSONResponse(
             {"error": "Забагато конвертацій поспіль. Спробуйте пізніше."}, status_code=429
         )
-
-    job_id = uuid.uuid4().hex
-    job_dir = os.path.join(config.DOWNLOAD_DIR, "converts", job_id)
-    os.makedirs(job_dir, exist_ok=True)
-
-    original_name = os.path.basename(src.filepath)
-    ext = os.path.splitext(original_name)[1][:10] or ".bin"
-    input_path = os.path.join(job_dir, f"input{ext}")
-    shutil.copyfile(src.filepath, input_path)
-
-    result, error_resp = _finalize_conversion(
-        db, request, response, job_id, input_path, original_name, quality, audio_option
+    client_id, is_new = _client_id_and_flag(request)
+    resp = await proxy_helpers.proxy_json(
+        config.DOWNLOADER_CONVERTER_URL, "POST", f"/jobs/convert/from-download/{download_id}",
+        json_body={
+            "quality": quality, "audio_option": audio_option, "client_id": client_id,
+            "client_ip": ip, "username": request.session.get("site_username"),
+        },
+        unavailable_message="Модуль конвертера недоступний",
     )
-    return error_resp if error_resp else result
+    return _with_client_id_cookie(resp, client_id, is_new)
 
 
 @app.get("/api/convert/status/{job_id}")
-def conversion_status(job_id: str, db: Session = Depends(get_db), _=Depends(require_site_access_api)):
-    job = db.get(Conversion, job_id)
-    if not job:
-        return JSONResponse({"error": "not found"}, status_code=404)
-    return {
-        "id": job.id,
-        "status": job.status,
-        "progress": job.progress,
-        "eta_seconds": job.eta_seconds,
-        "input_summary": job.input_summary,
-        "duration_seconds": job.duration_seconds,
-        "error": job.error_message,
-        "filesize": job.filesize,
-    }
+async def conversion_status(job_id: str, _=Depends(require_site_access_api)):
+    return await proxy_helpers.proxy_json(
+        config.DOWNLOADER_CONVERTER_URL, "GET", f"/jobs/convert/{job_id}",
+        unavailable_message="Модуль конвертера недоступний",
+    )
 
 
 @app.post("/api/convert/cancel/{job_id}")
-def cancel_conversion(
-    job_id: str,
-    request: Request,
-    response: Response,
-    db: Session = Depends(get_db),
-    _=Depends(require_site_access_api),
-):
-    job = db.get(Conversion, job_id)
-    client_id = get_client_id(request, response)
-    if not job or job.client_id != client_id:
-        return JSONResponse({"error": "not found"}, status_code=404)
-    if job.status not in ("queued", "converting"):
-        return JSONResponse({"error": "already finished"}, status_code=400)
-    converter.request_cancel(job_id)
-    if job.status == "queued":
-        job.status = "cancelled"
-        job.finished_at = datetime.utcnow()
-        db.commit()
-    return {"ok": True}
+async def cancel_conversion(job_id: str, request: Request, _=Depends(require_site_access_api)):
+    client_id, is_new = _client_id_and_flag(request)
+    resp = await proxy_helpers.proxy_json(
+        config.DOWNLOADER_CONVERTER_URL, "POST", f"/jobs/convert/{job_id}/cancel",
+        json_body={"client_id": client_id},
+        unavailable_message="Модуль конвертера недоступний",
+    )
+    return _with_client_id_cookie(resp, client_id, is_new)
 
 
 @app.get("/api/convert/recent")
-def recent_conversions(
-    request: Request,
-    response: Response,
-    page: int = 1,
-    db: Session = Depends(get_db),
-    _=Depends(require_site_access_api),
-):
-    client_id = get_client_id(request, response)
-    page = max(1, page)
-    total = db.query(func.count(Conversion.id)).filter(Conversion.client_id == client_id).scalar()
-    total_pages = max(1, -(-total // RECENT_PAGE_SIZE))
-    page = min(page, total_pages)
-    rows = (
-        db.query(Conversion)
-        .filter(Conversion.client_id == client_id)
-        .order_by(Conversion.created_at.desc())
-        .offset((page - 1) * RECENT_PAGE_SIZE)
-        .limit(RECENT_PAGE_SIZE)
-        .all()
+async def recent_conversions(request: Request, page: int = 1, _=Depends(require_site_access_api)):
+    client_id, is_new = _client_id_and_flag(request)
+    resp = await proxy_helpers.proxy_json(
+        config.DOWNLOADER_CONVERTER_URL, "GET", "/jobs/convert",
+        params={"client_id": client_id, "page": page},
+        unavailable_message="Модуль конвертера недоступний",
     )
-    return {
-        "items": [
-            {
-                "id": r.id,
-                "title": r.original_filename or "video",
-                "status": r.status,
-                "progress": r.progress,
-                "filesize": r.filesize,
-            }
-            for r in rows
-        ],
-        "page": page,
-        "total_pages": total_pages,
-    }
+    return _with_client_id_cookie(resp, client_id, is_new)
 
 
 @app.get("/api/convert/file/{job_id}")
-def conversion_file(job_id: str, db: Session = Depends(get_db), _=Depends(require_site_access_api)):
-    job = db.get(Conversion, job_id)
-    if not job or job.status != "finished" or not job.filepath or not os.path.exists(job.filepath):
-        return JSONResponse({"error": "Файл недоступний"}, status_code=404)
-    filename = os.path.basename(job.filepath)
-    return FileResponse(job.filepath, filename=filename)
+async def conversion_file(job_id: str, _=Depends(require_site_access_api)):
+    return await proxy_helpers.proxy_file_stream(
+        config.DOWNLOADER_CONVERTER_URL, f"/jobs/convert/{job_id}/file",
+        unavailable_message="Модуль конвертера недоступний",
+    )
 
 
 # ---------------- Metadata editor ----------------
-# No DB history here on purpose (unlike downloads/conversions) - this is a
-# quick read-then-strip operation, not a background job. The cleaned file
-# sits in a token-named temp dir just long enough to be downloaded once,
-# cleaned up right after via a background task, with cleanup.py sweeping
-# any abandoned ones (user never came back for the download) as a backstop.
-
-METADATA_TOKEN_RE = re.compile(r"^[0-9a-f]{32}$")
-
+# Runs in its own module container (docker-compose.yml) - stateless on this
+# side too (no DB row), core only does auth/rate-limiting/upload-size
+# enforcement then proxies through to it, the same pattern as Scroll
+# Recorder. See metadata/app/main.py for the actual read/strip logic.
 
 @app.post("/api/metadata/process")
 async def process_metadata(
@@ -804,79 +560,21 @@ async def process_metadata(
         return JSONResponse(
             {"error": "Забагато запитів поспіль. Спробуйте пізніше."}, status_code=429
         )
-
-    token = uuid.uuid4().hex
-    job_dir = os.path.join(config.DOWNLOAD_DIR, "metadata", token)
-    os.makedirs(job_dir, exist_ok=True)
-
-    original_name = file.filename or "file"
-    ext = os.path.splitext(original_name)[1][:15] or ".bin"
-    input_path = os.path.join(job_dir, f"input{ext}")
-
-    max_bytes = auth.get_max_upload_mb(db) * 1024 * 1024
-    total = 0
-    too_large = False
-    with open(input_path, "wb") as out:
-        while True:
-            chunk = await file.read(1024 * 1024)
-            if not chunk:
-                break
-            total += len(chunk)
-            if total > max_bytes:
-                too_large = True
-                break
-            out.write(chunk)
-    if too_large:
-        shutil.rmtree(job_dir, ignore_errors=True)
-        return JSONResponse(
-            {"error": f"Файл перевищує ліміт {auth.get_max_upload_mb(db)} МБ"}, status_code=413
-        )
-
-    metadata = metadata_tool.read_metadata(input_path)
-    if metadata is None:
-        shutil.rmtree(job_dir, ignore_errors=True)
-        return JSONResponse({"error": "Не вдалося прочитати цей файл"}, status_code=400)
-
-    clean_name = re.sub(r"[^\w\-. ]", "_", os.path.basename(original_name)).strip(" .") or "file"
-    output_path = os.path.join(job_dir, f"clean_{clean_name}")
-    ok, _err = metadata_tool.strip_metadata(input_path, output_path)
-    if not ok:
-        shutil.rmtree(job_dir, ignore_errors=True)
-        return JSONResponse(
-            {"error": "Не вдалося видалити метадані з цього формату файлу"}, status_code=400
-        )
-
-    after = metadata_tool.read_metadata(output_path)
-    verified = after is not None
-    classified = metadata_tool.classify_metadata(metadata, after, verified=verified)
-    found_count = sum(1 for c in classified.values() if c["status"] != "absent")
-    removable_count = sum(1 for c in classified.values() if c["status"] == "removable")
-    return {
-        "token": token,
-        "filename": clean_name,
-        "metadata": classified,
-        "found_count": found_count,
-        "removable_count": removable_count,
-        "verified": verified,
-    }
+    max_upload_mb = auth.get_max_upload_mb(db)
+    return await proxy_helpers.proxy_upload(
+        config.METADATA_URL, "/process", file, max_upload_mb * 1024 * 1024,
+        os.path.join(config.DATA_DIR, "tmp_uploads"),
+        too_large_message=f"Файл перевищує ліміт {max_upload_mb} МБ",
+        unavailable_message="Модуль редактора метаданих недоступний",
+    )
 
 
 @app.get("/api/metadata/download/{token}")
-def download_clean_file(
-    token: str, background_tasks: BackgroundTasks, _=Depends(require_site_access_api)
-):
-    if not METADATA_TOKEN_RE.match(token):
-        return JSONResponse({"error": "Файл недоступний"}, status_code=404)
-    job_dir = os.path.join(config.DOWNLOAD_DIR, "metadata", token)
-    if not os.path.isdir(job_dir):
-        return JSONResponse({"error": "Файл недоступний"}, status_code=404)
-    candidates = [f for f in os.listdir(job_dir) if f.startswith("clean_")]
-    if not candidates:
-        return JSONResponse({"error": "Файл недоступний"}, status_code=404)
-    filepath = os.path.join(job_dir, candidates[0])
-    filename = candidates[0][len("clean_"):]
-    background_tasks.add_task(shutil.rmtree, job_dir, ignore_errors=True)
-    return FileResponse(filepath, filename=filename)
+async def download_clean_file(token: str, _=Depends(require_site_access_api)):
+    return await proxy_helpers.proxy_file_stream(
+        config.METADATA_URL, f"/download/{token}",
+        unavailable_message="Модуль редактора метаданих недоступний",
+    )
 
 
 @app.get("/api/notifications/next")
@@ -968,59 +666,62 @@ def _page_param(request: Request, name: str) -> int:
         return 1
 
 
+# Static labels for the admin "Статистика" per-period activity table - the
+# actual counts come from the downloader-converter module's own
+# /admin/user-activity-summary (see stats.py there), this is just display
+# text that never needed a DB round-trip of its own.
+ACTIVITY_PERIODS = [("day", "24 г"), ("week", "7д"), ("month", "30д"), ("all", "весь час")]
+
+HISTORY_PAGE_SIZE = 10
+
+
+def _parse_row_dates(row: dict, fields=("created_at",)) -> dict:
+    """Module admin endpoints send timestamps as ISO strings over JSON -
+    admin.html's format_dt() global expects a real datetime, same as when
+    these rows came straight from a local ORM query."""
+    row = dict(row)
+    for f in fields:
+        if row.get(f):
+            row[f] = datetime.fromisoformat(row[f])
+    return row
+
+
 @app.get("/admin", response_class=HTMLResponse)
-def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(require_admin_dep)):
-    total = db.query(func.count(Download.id)).scalar()
-    finished = db.query(func.count(Download.id)).filter(Download.status == "finished").scalar()
-    errors = db.query(func.count(Download.id)).filter(Download.status == "error").scalar()
-    total_size = (
-        db.query(func.coalesce(func.sum(Download.filesize), 0))
-        .filter(Download.status == "finished")
-        .scalar()
-    )
-    cookies_used_count = db.query(func.count(Download.id)).filter(Download.used_cookies.is_(True)).scalar()
+async def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(require_admin_dep)):
+    downloader_converter_available = modules.is_module_available("downloader_converter")
+    base_url = config.DOWNLOADER_CONVERTER_URL
 
-    by_source = (
-        db.query(Download.source, func.count(Download.id))
-        .filter(Download.status == "finished")
-        .group_by(Download.source)
-        .order_by(func.count(Download.id).desc())
-        .limit(10)
-        .all()
-    )
+    stats = await proxy_helpers.fetch_json(base_url, "/admin/stats", default={}) or {}
+    total = stats.get("total", 0)
+    finished = stats.get("finished", 0)
+    errors = stats.get("errors", 0)
+    total_size = stats.get("total_size", 0)
+    cookies_used_count = stats.get("cookies_used_count", 0)
+    by_source = stats.get("by_source", [])
+    conversion_total = stats.get("conversion_total", 0)
+    conversion_finished = stats.get("conversion_finished", 0)
+    conversion_errors = stats.get("conversion_errors", 0)
+    conversion_total_size = stats.get("conversion_total_size", 0)
+    auto_conversion_count = stats.get("auto_conversion_count", 0)
 
-    HISTORY_PAGE_SIZE = 10
     history_total_pages = max(1, -(-total // HISTORY_PAGE_SIZE))  # ceil division
     history_page = min(_page_param(request, "history_page"), history_total_pages)
-    history = (
-        db.query(Download)
-        .order_by(Download.created_at.desc())
-        .offset((history_page - 1) * HISTORY_PAGE_SIZE)
-        .limit(HISTORY_PAGE_SIZE)
-        .all()
-    )
+    history_data = await proxy_helpers.fetch_json(
+        base_url, "/admin/history/downloads", params={"page": history_page}, default={},
+    ) or {}
+    history = [_parse_row_dates(r) for r in history_data.get("items", [])]
 
-    conversion_total = db.query(func.count(Conversion.id)).scalar()
-    conversion_finished = db.query(func.count(Conversion.id)).filter(Conversion.status == "finished").scalar()
-    conversion_errors = db.query(func.count(Conversion.id)).filter(Conversion.status == "error").scalar()
-    conversion_total_size = (
-        db.query(func.coalesce(func.sum(Conversion.filesize), 0))
-        .filter(Conversion.status == "finished")
-        .scalar()
-    )
-    auto_conversion_count = db.query(func.count(Conversion.id)).filter(Conversion.is_auto.is_(True)).scalar()
     conversion_total_pages = max(1, -(-conversion_total // HISTORY_PAGE_SIZE))
     conversion_page = min(_page_param(request, "conversion_page"), conversion_total_pages)
-    conversion_history = (
-        db.query(Conversion)
-        .order_by(Conversion.created_at.desc())
-        .offset((conversion_page - 1) * HISTORY_PAGE_SIZE)
-        .limit(HISTORY_PAGE_SIZE)
-        .all()
-    )
+    conversion_data = await proxy_helpers.fetch_json(
+        base_url, "/admin/history/conversions", params={"page": conversion_page}, default={},
+    ) or {}
+    conversion_history = [_parse_row_dates(r) for r in conversion_data.get("items", [])]
 
-    user_activity = stats_module.user_activity(db)
-    activity_periods = [(key, label) for key, label, _delta in stats_module.PERIODS]
+    user_activity = await proxy_helpers.fetch_json(base_url, "/admin/user-activity-summary", default={}) or {}
+    for key, _label in ACTIVITY_PERIODS:
+        user_activity.setdefault(key, [])
+    activity_periods = ACTIVITY_PERIODS
 
     sys_info = {
         "memory": sysinfo.get_memory_stats(),
@@ -1047,6 +748,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _=Depends(r
         "admin.html",
         {
             "request": request,
+            "downloader_converter_available": downloader_converter_available,
             "site_gate_enabled": site_gate_enabled,
             "users": users,
             "admin_user_count": admin_user_count,
@@ -1096,76 +798,28 @@ def admin_sysinfo(db: Session = Depends(get_db), _=Depends(require_admin_dep)):
 
 
 @app.get("/admin/api/processes")
-def admin_processes(db: Session = Depends(get_db), _=Depends(require_admin_dep)):
+async def admin_processes(db: Session = Depends(get_db), _=Depends(require_admin_dep)):
     """Same idea as /api/processes, but site-wide instead of scoped to one
     browser's client_id - lets an admin see what every regular user is up
     to. Admins' own jobs are deliberately left out: this tray is for keeping
     an eye on the userbase, not on other admins (or yourself)."""
     admin_usernames = [u.username for u in db.query(User).filter(User.is_admin.is_(True)).all()]
-    downloads = _hide_stale_cancelled(
-        db.query(Download).filter(
-            Download.status != "expired",
-            or_(Download.username.is_(None), Download.username.notin_(admin_usernames)),
-        ),
-        Download,
-    ).order_by(Download.created_at.desc()).limit(50).all()
-    conversions = _hide_stale_cancelled(
-        db.query(Conversion).filter(
-            Conversion.status != "expired",
-            or_(Conversion.username.is_(None), Conversion.username.notin_(admin_usernames)),
-        ),
-        Conversion,
-    ).order_by(Conversion.created_at.desc()).limit(50).all()
-    items = [
-        {
-            "id": r.id,
-            "kind": "download",
-            "username": r.username or "—",
-            "title": r.title or r.url,
-            "status": r.status,
-            "progress": r.progress,
-            "eta_seconds": r.eta_seconds,
-            "created_at": r.created_at.isoformat(),
-        }
-        for r in downloads
-    ] + [
-        {
-            "id": r.id,
-            "kind": "conversion",
-            "username": r.username or "—",
-            "title": r.original_filename or "video",
-            "status": r.status,
-            "progress": r.progress,
-            "eta_seconds": r.eta_seconds,
-            "created_at": r.created_at.isoformat(),
-        }
-        for r in conversions
-    ]
-    items.sort(key=lambda it: it["created_at"], reverse=True)
-    return items[:50]
+    return await proxy_helpers.fetch_json(
+        config.DOWNLOADER_CONVERTER_URL, "/admin/processes",
+        params={"exclude_usernames": ",".join(admin_usernames)}, default=[],
+    )
 
 
 @app.get("/admin/api/user-activity/{user_id}")
-def admin_user_activity(user_id: str, db: Session = Depends(get_db), _=Depends(require_admin_dep)):
+async def admin_user_activity(user_id: str, db: Session = Depends(get_db), _=Depends(require_admin_dep)):
     user = db.get(User, user_id)
     if not user:
         return JSONResponse({"error": "Користувача не знайдено"}, status_code=404)
     tz = auth.get_timezone(db)
 
-    downloads = (
-        db.query(Download)
-        .filter(Download.username == user.username)
-        .order_by(Download.created_at.desc())
-        .limit(100)
-        .all()
-    )
-    conversions = (
-        db.query(Conversion)
-        .filter(Conversion.username == user.username)
-        .order_by(Conversion.created_at.desc())
-        .limit(100)
-        .all()
-    )
+    data = await proxy_helpers.fetch_json(
+        config.DOWNLOADER_CONVERTER_URL, f"/admin/user-activity/{user.username}", default={},
+    ) or {}
     return {
         "username": user.username,
         "created_at": timeutil.format_local(user.created_at, tz),
@@ -1173,23 +827,23 @@ def admin_user_activity(user_id: str, db: Session = Depends(get_db), _=Depends(r
         "note": user.note or "",
         "downloads": [
             {
-                "id": h.id,
-                "title": h.title or h.url,
-                "status": h.status,
-                "date": timeutil.format_local(h.created_at, tz),
-                "size": sysinfo.format_bytes(h.filesize) if h.filesize else "",
+                "id": h["id"],
+                "title": h["title"],
+                "status": h["status"],
+                "date": timeutil.format_local(datetime.fromisoformat(h["created_at"]), tz) if h["created_at"] else "",
+                "size": sysinfo.format_bytes(h["filesize"]) if h["filesize"] else "",
             }
-            for h in downloads
+            for h in data.get("downloads", [])
         ],
         "conversions": [
             {
-                "id": c.id,
-                "title": c.original_filename or "video",
-                "status": c.status,
-                "date": timeutil.format_local(c.created_at, tz),
-                "size": sysinfo.format_bytes(c.filesize) if c.filesize else "",
+                "id": c["id"],
+                "title": c["title"],
+                "status": c["status"],
+                "date": timeutil.format_local(datetime.fromisoformat(c["created_at"]), tz) if c["created_at"] else "",
+                "size": sysinfo.format_bytes(c["filesize"]) if c["filesize"] else "",
             }
-            for c in conversions
+            for c in data.get("conversions", [])
         ],
     }
 
@@ -1210,63 +864,34 @@ def admin_save_user_note(
 
 
 @app.get("/admin/api/errors/{kind}")
-def admin_errors(kind: str, db: Session = Depends(get_db), _=Depends(require_admin_dep)):
+async def admin_errors(kind: str, db: Session = Depends(get_db), _=Depends(require_admin_dep)):
     if kind not in ("download", "conversion"):
         return JSONResponse({"error": "invalid kind"}, status_code=400)
     tz = auth.get_timezone(db)
-    model = Download if kind == "download" else Conversion
-    rows = (
-        db.query(model)
-        .filter(model.status == "error")
-        .order_by(model.created_at.desc())
-        .limit(200)
-        .all()
-    )
+    data = await proxy_helpers.fetch_json(config.DOWNLOADER_CONVERTER_URL, f"/admin/errors/{kind}", default={}) or {}
     return {
         "items": [
             {
-                "id": r.id,
-                "title": (r.title or r.url) if kind == "download" else (r.original_filename or "video"),
-                "url": r.url if kind == "download" else None,
-                "username": r.username or "—",
-                "date": timeutil.format_local(r.created_at, tz),
+                "id": r["id"],
+                "title": r["title"],
+                "url": r["url"],
+                "username": r["username"],
+                "date": timeutil.format_local(datetime.fromisoformat(r["created_at"]), tz) if r["created_at"] else "",
             }
-            for r in rows
+            for r in data.get("items", [])
         ],
     }
 
 
 @app.post("/admin/delete/{job_id}")
-def admin_delete(job_id: str, db: Session = Depends(get_db), _=Depends(require_admin_dep)):
-    job = db.get(Download, job_id)
-    if job:
-        if job.filepath and os.path.exists(job.filepath):
-            try:
-                os.remove(job.filepath)
-                parent = os.path.dirname(job.filepath)
-                if os.path.isdir(parent) and not os.listdir(parent):
-                    os.rmdir(parent)
-            except OSError:
-                pass
-        db.delete(job)
-        db.commit()
+async def admin_delete(job_id: str, _=Depends(require_admin_dep)):
+    await proxy_helpers.proxy_json(config.DOWNLOADER_CONVERTER_URL, "DELETE", f"/admin/jobs/download/{job_id}")
     return RedirectResponse("/admin?tab=stats", status_code=303)
 
 
 @app.post("/admin/delete-conversion/{job_id}")
-def admin_delete_conversion(job_id: str, db: Session = Depends(get_db), _=Depends(require_admin_dep)):
-    job = db.get(Conversion, job_id)
-    if job:
-        if job.filepath and os.path.exists(job.filepath):
-            try:
-                os.remove(job.filepath)
-                parent = os.path.dirname(job.filepath)
-                if os.path.isdir(parent) and not os.listdir(parent):
-                    os.rmdir(parent)
-            except OSError:
-                pass
-        db.delete(job)
-        db.commit()
+async def admin_delete_conversion(job_id: str, _=Depends(require_admin_dep)):
+    await proxy_helpers.proxy_json(config.DOWNLOADER_CONVERTER_URL, "DELETE", f"/admin/jobs/convert/{job_id}")
     return RedirectResponse("/admin?tab=stats", status_code=303)
 
 
@@ -1346,46 +971,26 @@ def admin_notify_user(
 
 
 @app.post("/admin/clear-ytdlp-cache")
-def admin_clear_ytdlp_cache(_=Depends(require_admin_dep)):
-    try:
-        clear_ytdlp_cache()
-    except Exception:
-        pass
+async def admin_clear_ytdlp_cache(_=Depends(require_admin_dep)):
+    await proxy_helpers.proxy_json(config.DOWNLOADER_CONVERTER_URL, "POST", "/admin/clear-ytdlp-cache")
     return RedirectResponse("/admin?tab=settings&cache_cleared=1", status_code=303)
 
 
 @app.post("/admin/wipe-data")
-def admin_wipe_data(_=Depends(require_admin_dep)):
-    try:
-        wipe_all_data()
-    except Exception:
-        pass
+async def admin_wipe_data(_=Depends(require_admin_dep)):
+    await proxy_helpers.proxy_json(config.DOWNLOADER_CONVERTER_URL, "POST", "/admin/wipe-data")
     return RedirectResponse("/admin?tab=settings&data_wiped=1", status_code=303)
 
 
-ACTIVE_JOB_STATUSES = ("queued", "downloading", "converting")
-
-
 @app.post("/admin/delete-all-history")
-def admin_delete_all_history(db: Session = Depends(get_db), _=Depends(require_admin_dep)):
+async def admin_delete_all_history(_=Depends(require_admin_dep)):
     """Wipes every download/conversion row (and their files) from history -
     unlike /admin/wipe-data (which only frees disk space, leaving the rows
     behind as "expired"), this actually clears the Історія tables. Jobs
     still in flight are left alone rather than yanking the row out from
     under a background thread that's mid-update on it - they'll show up
     here once they finish (or get cancelled) like normal."""
-    for model, subdir in ((Download, None), (Conversion, "converts")):
-        rows = db.query(model).filter(model.status.notin_(ACTIVE_JOB_STATUSES)).all()
-        for job in rows:
-            if job.filepath and os.path.exists(job.filepath):
-                try:
-                    os.remove(job.filepath)
-                except OSError:
-                    pass
-            job_dir = os.path.join(config.DOWNLOAD_DIR, subdir, job.id) if subdir else os.path.join(config.DOWNLOAD_DIR, job.id)
-            shutil.rmtree(job_dir, ignore_errors=True)
-            db.delete(job)
-    db.commit()
+    await proxy_helpers.proxy_json(config.DOWNLOADER_CONVERTER_URL, "POST", "/admin/delete-all-history")
     return RedirectResponse("/admin?tab=settings&history_deleted=1", status_code=303)
 
 
@@ -1415,15 +1020,15 @@ def admin_settings(
     if timeutil.is_valid_timezone(timezone):
         auth.set_setting(db, "timezone", timezone)
 
+    modules.push_downloader_converter_config()
     return RedirectResponse("/admin?tab=settings&saved=1", status_code=303)
 
 
 @app.get("/admin/api/proxy-status")
-def admin_proxy_status(db: Session = Depends(get_db), _=Depends(require_admin_dep)):
-    proxy_url = auth.get_proxy_url(db)
-    if not proxy_url:
-        return {"configured": False, "active": False}
-    return {"configured": True, "active": check_proxy_connection(proxy_url)}
+async def admin_proxy_status(_=Depends(require_admin_dep)):
+    return await proxy_helpers.fetch_json(
+        config.DOWNLOADER_CONVERTER_URL, "/admin/proxy-status", default={"configured": False, "active": False},
+    )
 
 
 @app.post("/admin/settings/cookies")

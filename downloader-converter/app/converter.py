@@ -9,7 +9,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
-from . import auth, config
+from . import config, settings_store
 from .database import SessionLocal
 from .downloader import parse_timecode
 from .models import Conversion
@@ -380,7 +380,7 @@ def _run_job(job_id: str, input_path: str, info: dict):
         db.close()
         return
 
-    limit = auth.get_max_concurrent_conversions(db)
+    limit = settings_store.get("max_concurrent_conversions", 1)
     _gate.acquire(limit)
     try:
         if job_id in _cancel_requested:

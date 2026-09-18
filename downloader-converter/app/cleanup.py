@@ -4,27 +4,17 @@ import threading
 import time
 from datetime import datetime, timedelta
 
-from . import auth, config
+from . import config, settings_store
 from .database import SessionLocal
 from .models import Conversion, Download
-
-# The metadata editor keeps no DB history - its temp dirs are meant to live
-# only until the user downloads the cleaned file (deleted right after via a
-# background task). This is a backstop for ones nobody ever came back for.
-METADATA_TEMP_MAX_AGE_HOURS = 1
 
 
 def run_cleanup_once():
     """The scheduled sweep: removes finished/errored jobs older than the
     configured retention window. Runs automatically on a timer - see
     wipe_all_data() below for the manual "delete everything now" button."""
-    db = SessionLocal()
-    try:
-        retention_hours = auth.get_retention_hours(db)
-    finally:
-        db.close()
+    retention_hours = settings_store.get("retention_hours", 24)
     _sweep_jobs(max_age_hours=retention_hours)
-    _cleanup_metadata_temp_dirs()
 
 
 def wipe_all_data():
@@ -33,7 +23,6 @@ def wipe_all_data():
     handles the time-based cleanup, so this is purely for "free up disk space
     immediately" rather than a second, redundant retention policy."""
     _sweep_jobs(max_age_hours=None)
-    _cleanup_metadata_temp_dirs()
 
 
 def _sweep_jobs(max_age_hours):
@@ -60,33 +49,13 @@ def _sweep_jobs(max_age_hours):
         db.close()
 
 
-def _cleanup_metadata_temp_dirs():
-    base = os.path.join(config.DOWNLOAD_DIR, "metadata")
-    try:
-        entries = os.listdir(base)
-    except OSError:
-        return
-    cutoff = time.time() - METADATA_TEMP_MAX_AGE_HOURS * 3600
-    for name in entries:
-        path = os.path.join(base, name)
-        try:
-            if os.path.isdir(path) and os.path.getmtime(path) < cutoff:
-                shutil.rmtree(path, ignore_errors=True)
-        except OSError:
-            pass
-
-
 def _loop():
     while True:
-        db = SessionLocal()
-        try:
-            interval_minutes = auth.get_cleanup_interval_minutes(db)
-        finally:
-            db.close()
         try:
             run_cleanup_once()
         except Exception:
             pass
+        interval_minutes = settings_store.get("cleanup_interval_minutes", 30)
         time.sleep(interval_minutes * 60)
 
 

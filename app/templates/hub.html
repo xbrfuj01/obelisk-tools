@@ -6,6 +6,7 @@
 </div>
 
 <div class="tool-grid">
+  {% if available.downloader_converter %}
   <a href="/downloader" class="tool-card">
     <span class="tool-icon">⬇</span>
     <span class="tool-name">Завантаження відео</span>
@@ -17,12 +18,15 @@
     <span class="tool-name">Конвертер відео</span>
     <span class="tool-desc">Перекодування відео у формат, сумісний з Adobe Premiere Pro.</span>
   </a>
+  {% endif %}
 
+  {% if available.metadata %}
   <a href="/metadata" class="tool-card">
     <span class="tool-icon">◎</span>
     <span class="tool-name">Редактор метаданих</span>
     <span class="tool-desc">Перегляд і видалення EXIF/XMP/IPTC та інших метаданих із файлу.</span>
   </a>
+  {% endif %}
 
   {% if available.scroll_recorder %}
   <a href="/scroll-recorder" class="tool-card">

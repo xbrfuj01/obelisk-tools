@@ -112,6 +112,9 @@
 </nav>
 
 <div class="tab-panel" data-tab-panel="stats">
+  {% if not downloader_converter_available %}
+  <div class="card"><p class="error">Модуль завантажувача/конвертера зараз недоступний — статистика нижче може бути неповною.</p></div>
+  {% endif %}
   <section>
     <div class="card stats-overview stats-overview-horizontal">
       <div class="stats-overview-group">
@@ -169,6 +172,9 @@
 </div>
 
 <div class="tab-panel" data-tab-panel="history" hidden>
+  {% if not downloader_converter_available %}
+  <div class="card"><p class="error">Модуль завантажувача/конвертера зараз недоступний — історія нижче може бути неповною.</p></div>
+  {% endif %}
   <section>
     <h2>Історія завантажень</h2>
     <div class="table-wrap card">

@@ -3,7 +3,8 @@ import time
 
 import httpx
 
-from . import config
+from . import auth, config
+from .database import SessionLocal
 
 # How long a cached health result is trusted before the next background
 # recheck - short enough that a module coming up/down is reflected quickly
@@ -27,12 +28,38 @@ def _check_once(name: str, base_url: str) -> bool:
         return False
 
 
+def push_downloader_converter_config():
+    """The downloader+converter module has no Setting table of its own -
+    core owns the real values and pushes them here. Called after every
+    admin settings save, plus opportunistically on each health-check tick
+    below so the module self-heals its in-memory cache after a restart
+    without needing retry/backoff logic tied to a specific admin action."""
+    db = SessionLocal()
+    try:
+        data = {
+            "max_concurrent_downloads": auth.get_max_concurrent_downloads(db),
+            "max_concurrent_conversions": auth.get_max_concurrent_conversions(db),
+            "proxy_url": auth.get_proxy_url(db),
+            "proxy_domains": auth.get_proxy_domains(db),
+            "retention_hours": auth.get_retention_hours(db),
+            "cleanup_interval_minutes": auth.get_cleanup_interval_minutes(db),
+        }
+    finally:
+        db.close()
+    try:
+        httpx.post(f"{config.DOWNLOADER_CONVERTER_URL}/internal/config", json=data, timeout=5)
+    except httpx.HTTPError:
+        pass
+
+
 def _loop():
     while True:
         for name, base_url in config.MODULE_URLS.items():
             ok = _check_once(name, base_url)
             with _lock:
                 _available[name] = ok
+            if name == "downloader_converter" and ok:
+                push_downloader_converter_config()
         time.sleep(_RECHECK_INTERVAL_SECONDS)
 
 
