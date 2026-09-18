@@ -26,7 +26,7 @@
 
 ## Як це працює
 
-Образ автоматично збирається GitHub Actions ([.github/workflows/docker-publish.yml](.github/workflows/docker-publish.yml)) при кожному push у `main` і публікується в GitHub Container Registry: `ghcr.io/xbrfuj01/obelisk:latest`. `docker-compose.yml` посилається саме на цей готовий образ (`image:`, без `build:`) — тому на сервері **не потрібен ні git, ні вихідний код**, лише сам `docker-compose.yml`.
+Образи автоматично збираються GitHub Actions ([.github/workflows/docker-publish.yml](.github/workflows/docker-publish.yml)) при кожному push у `main` і публікуються в GitHub Container Registry: `ghcr.io/xbrfuj01/obelisk-tools:latest` (ядро сайту) плюс окремі образи для кожного з опційних модулів (`obelisk-tools-downloader-converter`, `obelisk-tools-metadata`, `obelisk-tools-scroll-recorder`). `docker-compose.yml` посилається на ці готові образи (`image:`, без `build:`) — тому на сервері **не потрібен ні git, ні вихідний код**, лише сам `docker-compose.yml`.
 
 Для YouTube образ разом з `obelisk` піднімає й другий контейнер, **`bgutil-provider`** — він генерує "proof of origin" токен, якого YouTube зараз вимагає від будь-якого клієнта (включно з `yt-dlp`), інакше видає лише обмежену якість або відмовляє повністю. Обидва сервіси вже описані в `docker-compose.yml`, окремо піднімати нічого не треба.
 
@@ -34,7 +34,7 @@
 
 1. У Dockge (або будь-де, де ви керуєте Docker Compose стеками) створіть новий стек і вставте туди вміст [docker-compose.yml](docker-compose.yml) з цього репозиторію — жодних змінних середовища заповнювати не потрібно.
 
-2. Одноразово: зробіть пакет `obelisk` у GHCR публічним, щоб Dockge міг стягнути образ без логіну — на GitHub відкрийте свій профіль → вкладка **Packages** → `obelisk` → **Package settings** → **Change visibility** → **Public**. (Якщо лишити приватним — доведеться один раз виконати `docker login ghcr.io` на сервері з Personal Access Token, що має право `read:packages`.)
+2. Пакети в GHCR публікуються публічними за замовчуванням (репозиторій публічний), тож Dockge може стягнути образи без логіну. Якщо якийсь пакет виявиться приватним — на GitHub відкрийте свій профіль → вкладка **Packages** → потрібний пакет → **Package settings** → **Change visibility** → **Public** (або один раз виконайте `docker login ghcr.io` на сервері з Personal Access Token, що має право `read:packages`).
 
 3. Натисніть **Deploy**.
 

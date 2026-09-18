@@ -1,6 +1,6 @@
 services:
   obelisk:
-    image: ghcr.io/xbrfuj01/obelisk:latest
+    image: ghcr.io/xbrfuj01/obelisk-tools:latest
     pull_policy: always
     container_name: obelisk
     ports:
@@ -24,7 +24,7 @@ services:
   # YouTube forces SABR (no usable format URL) on every client this module
   # uses, regardless of which one.
   downloader-converter:
-    image: ghcr.io/xbrfuj01/obelisk-downloader-converter:latest
+    image: ghcr.io/xbrfuj01/obelisk-tools-downloader-converter:latest
     pull_policy: always
     container_name: obelisk-downloader-converter
     volumes:
@@ -47,7 +47,7 @@ services:
   # "scroll-recorder" (see config.py's SCROLL_RECORDER_URL), which proxies
   # it into the main UI at /scroll-recorder.
   scroll-recorder:
-    image: ghcr.io/xbrfuj01/obelisk-scroll-recorder:latest
+    image: ghcr.io/xbrfuj01/obelisk-tools-scroll-recorder:latest
     pull_policy: always
     container_name: obelisk-scroll-recorder
     volumes:
@@ -59,7 +59,7 @@ services:
   # port, reached only over the compose network as "metadata" (see
   # config.py's METADATA_URL), proxied into the main UI at /metadata.
   metadata:
-    image: ghcr.io/xbrfuj01/obelisk-metadata:latest
+    image: ghcr.io/xbrfuj01/obelisk-tools-metadata:latest
     pull_policy: always
     container_name: obelisk-metadata
     volumes:
