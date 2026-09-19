@@ -270,7 +270,16 @@ async function probeQualities() {
     const res = await fetch(`/api/formats?url=${encodeURIComponent(url)}`);
     const data = await res.json();
 
-    if (data.error || !data.qualities || !data.qualities.length) {
+    if (data.error) {
+      // A real, specific reason (rate limit, module disabled, banned URL...)
+      // - shown as-is instead of being flattened into the generic message
+      // below, which used to make e.g. a rate limit look identical to
+      // "this video just has no detectable qualities".
+      urlStatus.innerHTML = "";
+      qualityHint.textContent = data.error;
+      return;
+    }
+    if (!data.qualities || !data.qualities.length) {
       urlStatus.innerHTML = "";
       qualityHint.textContent = "Не вдалося визначити якості для цього посилання — буде використано найкращу доступну.";
       return;
