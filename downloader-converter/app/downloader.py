@@ -406,16 +406,25 @@ def _extract_with_cookie_fallback_attempt(ydl_opts, url, *, download, should_ret
             before_retry()
         retry_opts = dict(ydl_opts)
         retry_opts["cookiefile"] = cookies_path
-        if is_youtube:
-            cached_client = cached[0] if cached and cached[1] else None
-            info, client = _extract_youtube_client_priority(
-                retry_opts, url, download, YOUTUBE_CLIENT_PRIORITY_COOKIES, cached_client=cached_client, before_retry=before_retry,
-            )
-            _cache_youtube_client(url, client, True)
-        else:
-            with yt_dlp.YoutubeDL(retry_opts) as ydl:
-                info = ydl.extract_info(url, download=download)
-        return info, True
+        try:
+            if is_youtube:
+                cached_client = cached[0] if cached and cached[1] else None
+                info, client = _extract_youtube_client_priority(
+                    retry_opts, url, download, YOUTUBE_CLIENT_PRIORITY_COOKIES, cached_client=cached_client, before_retry=before_retry,
+                )
+                _cache_youtube_client(url, client, True)
+            else:
+                with yt_dlp.YoutubeDL(retry_opts) as ydl:
+                    info = ydl.extract_info(url, download=download)
+            return info, True
+        finally:
+            # get_cookies_path() hands out a fresh throwaway copy per call
+            # (see its own docstring for why) - this module's own job to
+            # clean up, since core's cookies.txt itself is never touched.
+            try:
+                os.remove(cookies_path)
+            except OSError:
+                pass
 
 
 def probe_qualities(url: str):
