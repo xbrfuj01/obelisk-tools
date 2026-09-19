@@ -510,6 +510,15 @@ function pollAutoConvert(convertId, title) {
         statusBox.innerHTML = `<div class="card status-card"><p>Автоконвертацію скасовано.</p></div>`;
         clearInterval(interval);
         document.dispatchEvent(new CustomEvent("obelisk:jobs-changed"));
+      } else if (job.status === "queued") {
+        const posLine = job.queue_position
+          ? `Місце в черзі на конвертацію: ${job.queue_position}${job.queue_total ? ` з ${job.queue_total}` : ""}`
+          : "У черзі на конвертацію для сумісності з відеоредакторами...";
+        statusBox.innerHTML = `<div class="card status-card">
+          ${statusCancelBtn("conversion", convertId)}
+          <p>${posLine}</p>
+          <div class="progress"><div class="progress-bar indeterminate"></div></div>
+        </div>`;
       } else {
         const progress = job.progress || 0;
         const eta = formatEta(job.eta_seconds);

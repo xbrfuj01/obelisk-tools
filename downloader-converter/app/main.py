@@ -328,10 +328,23 @@ def conversion_status(job_id: str, db: Session = Depends(get_db)):
     job = db.get(Conversion, job_id)
     if not job:
         raise HTTPException(404, "not found")
+    queue_position = None
+    queue_total = None
+    if job.status == "queued":
+        # Position among still-queued jobs only (not the ones already
+        # converting) - "queued" is the one status a job sits in for a
+        # user-visible stretch of time purely waiting on a concurrency
+        # slot (see converter._run_job), so it's the only one worth a
+        # number rather than just a spinner.
+        queue_total = db.query(Conversion).filter(Conversion.status == "queued").count()
+        queue_position = db.query(Conversion).filter(
+            Conversion.status == "queued", Conversion.created_at < job.created_at,
+        ).count() + 1
     return {
         "id": job.id, "status": job.status, "progress": job.progress, "eta_seconds": job.eta_seconds,
         "input_summary": job.input_summary, "duration_seconds": job.duration_seconds,
         "error": job.error_message, "filesize": job.filesize,
+        "queue_position": queue_position, "queue_total": queue_total,
     }
 
 

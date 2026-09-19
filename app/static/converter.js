@@ -240,6 +240,16 @@ function pollConvertStatus(id, durationSeconds, inputSummary) {
         clearInterval(interval);
         refreshRecent();
         document.dispatchEvent(new CustomEvent("obelisk:jobs-changed"));
+      } else if (job.status === "queued") {
+        const posLine = job.queue_position
+          ? `<p>Місце в черзі: ${job.queue_position}${job.queue_total ? ` з ${job.queue_total}` : ""}</p>`
+          : `<p>Статус: ${STATUS_LABELS.queued}...</p>`;
+        statusBox.innerHTML = `<div class="card status-card">
+          ${statusCancelBtn(id)}
+          ${posLine}
+          ${summaryLine}
+          <div class="progress"><div class="progress-bar indeterminate"></div></div>
+        </div>`;
       } else if (isIndeterminate) {
         statusBox.innerHTML = `<div class="card status-card">
           ${statusCancelBtn(id)}
