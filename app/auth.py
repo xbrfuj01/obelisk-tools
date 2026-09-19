@@ -96,6 +96,10 @@ def get_proxy_url(db: Session) -> str:
     return get_setting(db, "proxy_url", "") or ""
 
 
+def get_youtube_proxy_url(db: Session) -> str:
+    return get_setting(db, "youtube_proxy_url", "") or ""
+
+
 def get_proxy_domains(db: Session) -> list:
     raw = get_setting(db, "proxy_domains", config.DEFAULT_PROXY_DOMAINS) or ""
     return [d.strip().lower() for d in raw.split(",") if d.strip()]

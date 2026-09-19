@@ -344,6 +344,21 @@ def _is_geo_block_error(exc: Exception) -> bool:
     return any(marker in msg for marker in _GEO_BLOCK_MARKERS)
 
 
+def _proxy_for_geo_retry(url: str) -> str:
+    """Which proxy a geo-block retry should reach for through - YouTube
+    gets its own separately configured proxy (youtube_proxy_url) rather
+    than sharing the generic "blocked sites" one (vk/ok/rutube etc.): a
+    proxy that gets past YouTube's much stricter bot detection is a
+    different thing to find than one that merely isn't blocked in the
+    server's own country, and forcing them to share one address means
+    fixing one can quietly break the other. Falls back to the generic
+    proxy for a YouTube URL if no YouTube-specific one is set, so this
+    still does something useful before that gets configured."""
+    if _is_youtube_url(url):
+        return settings_store.get("youtube_proxy_url", "") or settings_store.get("proxy_url", "")
+    return settings_store.get("proxy_url", "")
+
+
 def _extract_with_cookie_fallback(ydl_opts, url, *, download, should_retry=lambda: True, before_retry=None):
     """Thin wrapper around _extract_with_cookie_fallback_attempt that adds
     exactly one more retry - through the configured proxy - but only when
@@ -358,7 +373,7 @@ def _extract_with_cookie_fallback(ydl_opts, url, *, download, should_retry=lambd
             ydl_opts, url, download=download, should_retry=should_retry, before_retry=before_retry,
         )
     except Exception as e:
-        proxy_url = settings_store.get("proxy_url", "")
+        proxy_url = _proxy_for_geo_retry(url)
         if not proxy_url or ydl_opts.get("proxy") or not should_retry() or not _is_geo_block_error(e):
             raise
         if before_retry:

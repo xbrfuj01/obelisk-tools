@@ -62,6 +62,7 @@ class ConfigPush(BaseModel):
     max_concurrent_conversions: Optional[int] = None
     proxy_url: Optional[str] = None
     proxy_domains: Optional[list] = None
+    youtube_proxy_url: Optional[str] = None
     retention_hours: Optional[int] = None
     cleanup_interval_minutes: Optional[int] = None
 
@@ -569,8 +570,9 @@ def admin_errors(kind: str, db: Session = Depends(get_db)):
 
 
 @app.get("/admin/proxy-status")
-def admin_proxy_status():
-    proxy_url = settings_store.get("proxy_url", "")
+def admin_proxy_status(which: str = "default"):
+    key = "youtube_proxy_url" if which == "youtube" else "proxy_url"
+    proxy_url = settings_store.get(key, "")
     if not proxy_url:
         return {"configured": False, "active": False}
     return {"configured": True, "active": check_proxy_connection(proxy_url)}

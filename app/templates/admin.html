@@ -459,6 +459,19 @@
         </label>
       </div>
 
+      <div class="settings-group-title-row">
+        <p class="settings-group-title">Проксі для YouTube</p>
+        <span class="proxy-status" id="youtube-proxy-status" hidden></span>
+      </div>
+      <p class="hint">
+        Окремий проксі саме для YouTube — не пов'язаний зі списком доменів вище.
+        Використовується лише як автоматична друга спроба, коли YouTube відмовляє
+        напряму (гео-блок за скаргою тощо), тож на швидкість звичайних відео не впливає.
+      </p>
+      <label>Адреса проксі для YouTube (напр. socks5h://user:pass@host:1080)
+        <input type="text" name="youtube_proxy_url" value="{{ youtube_proxy_url }}" placeholder="залиште порожнім, щоб не використовувати" autocomplete="off">
+      </label>
+
       <button type="submit">Зберегти</button>
     </form>
   </section>
@@ -736,26 +749,32 @@
   // and can take a few seconds if it's down.
 
   var proxyStatusEl = document.getElementById("proxy-status");
+  var youtubeProxyStatusEl = document.getElementById("youtube-proxy-status");
 
-  function checkProxyStatus() {
-    if (!proxyStatusEl) return;
-    proxyStatusEl.hidden = false;
-    proxyStatusEl.className = "proxy-status checking";
-    proxyStatusEl.textContent = "Перевірка з'єднання...";
-    fetch("/admin/api/proxy-status")
+  function checkOneProxyStatus(el, which) {
+    if (!el) return;
+    el.hidden = false;
+    el.className = "proxy-status checking";
+    el.textContent = "Перевірка з'єднання...";
+    fetch("/admin/api/proxy-status?which=" + which)
       .then(function (res) { return res.json(); })
       .then(function (data) {
         if (!data.configured) {
-          proxyStatusEl.hidden = true;
+          el.hidden = true;
           return;
         }
-        proxyStatusEl.className = "proxy-status " + (data.active ? "active" : "inactive");
-        proxyStatusEl.textContent = data.active ? "✓ З'єднання активне" : "✕ Немає з'єднання";
+        el.className = "proxy-status " + (data.active ? "active" : "inactive");
+        el.textContent = data.active ? "✓ З'єднання активне" : "✕ Немає з'єднання";
       })
       .catch(function () {
-        proxyStatusEl.className = "proxy-status inactive";
-        proxyStatusEl.textContent = "✕ Не вдалось перевірити";
+        el.className = "proxy-status inactive";
+        el.textContent = "✕ Не вдалось перевірити";
       });
+  }
+
+  function checkProxyStatus() {
+    checkOneProxyStatus(proxyStatusEl, "default");
+    checkOneProxyStatus(youtubeProxyStatusEl, "youtube");
   }
 
   btns.forEach(function (btn) {

@@ -12,6 +12,13 @@ _settings = {
     "max_concurrent_conversions": 1,
     "proxy_url": "",
     "proxy_domains": [],
+    # Separate from proxy_url above on purpose: a proxy that works for the
+    # generic "blocked sites" list (vk/ok/rutube) doesn't necessarily get
+    # past YouTube's much stricter bot detection, and vice versa - sharing
+    # one address means fixing one can quietly break the other. Only ever
+    # used reactively (see downloader.py's geo-block retry), never
+    # up-front, so a normal video's speed is unaffected either way.
+    "youtube_proxy_url": "",
     "retention_hours": 24,
     "cleanup_interval_minutes": 30,
 }

@@ -49,6 +49,7 @@ def push_downloader_converter_config():
             "max_concurrent_conversions": auth.get_max_concurrent_conversions(db),
             "proxy_url": auth.get_proxy_url(db),
             "proxy_domains": auth.get_proxy_domains(db),
+            "youtube_proxy_url": auth.get_youtube_proxy_url(db),
             "retention_hours": auth.get_retention_hours(db),
             "cleanup_interval_minutes": auth.get_cleanup_interval_minutes(db),
         }
