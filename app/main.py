@@ -522,7 +522,11 @@ async def get_formats(
     _=Depends(require_site_access_api), __=Depends(require_module_enabled("downloader_converter")),
 ):
     ip = request.client.host if request.client else "unknown"
-    if not auth.check_download_rate_limit(f"fmt:{ip}"):
+    # A read-only probe, not a real download/conversion - gets more
+    # headroom than auth.DOWNLOAD_RATE_LIMIT under the same window, since
+    # trying a few links or re-checking one after changing quality/mode
+    # shouldn't compete with that much lower-traffic limit.
+    if not auth.check_download_rate_limit(f"fmt:{ip}", limit=60):
         return JSONResponse(
             {"error": "Забагато запитів поспіль. Спробуйте пізніше."}, status_code=429
         )

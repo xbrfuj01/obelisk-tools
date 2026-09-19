@@ -311,15 +311,21 @@ _download_lock = threading.Lock()
 _download_windows = {}  # key -> {"count": int, "window_started": datetime}
 
 
-def check_download_rate_limit(key: str) -> bool:
-    """Returns True if this key is allowed to submit another download now."""
+def check_download_rate_limit(key: str, limit: int = DOWNLOAD_RATE_LIMIT) -> bool:
+    """Returns True if this key is allowed to submit another download now.
+
+    `limit` defaults to the shared download/convert/etc. threshold, but a
+    caller can pass its own - a quality-list probe (see the "fmt:" key) is
+    a much lighter read-only request than an actual download or
+    conversion, so it gets more headroom under the same 10-minute window
+    rather than sharing the number tuned for the heavy operations."""
     with _download_lock:
         entry = _download_windows.get(key)
         now = datetime.utcnow()
         if not entry or now - entry["window_started"] > timedelta(minutes=DOWNLOAD_RATE_WINDOW_MINUTES):
             _download_windows[key] = {"count": 1, "window_started": now}
             return True
-        if entry["count"] >= DOWNLOAD_RATE_LIMIT:
+        if entry["count"] >= limit:
             return False
         entry["count"] += 1
         return True
