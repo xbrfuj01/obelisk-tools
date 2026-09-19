@@ -1242,7 +1242,7 @@ button.stat-card:hover { border-color: var(--border-hover); }
 .cookies-actions label { margin: 0; }
 
 [data-tab-panel="settings"] h2 { margin: 24px 0 10px; }
-[data-tab-panel="settings"] section:first-child h2 { margin-top: 0; }
+[data-tab-panel="settings"] > section:first-child h2 { margin-top: 0; }
 [data-tab-panel="settings"] .card { padding: 16px; gap: 10px; }
 [data-tab-panel="settings"] label { gap: 4px; }
 [data-tab-panel="settings"] input, [data-tab-panel="settings"] select { padding: 8px 12px; font-size: 0.88rem; }

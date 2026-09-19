@@ -1252,7 +1252,6 @@ def admin_settings(
     session_max_age_days: int = Form(...),
     proxy_url: str = Form(""),
     proxy_domains: str = Form(""),
-    youtube_proxy_url: str = Form(""),
     timezone: str = Form(""),
     db: Session = Depends(get_db),
     _=Depends(require_admin_dep),
@@ -1265,12 +1264,27 @@ def admin_settings(
     auth.set_setting(db, "session_max_age_days", str(session_max_age_days))
     auth.set_setting(db, "proxy_url", proxy_url.strip())
     auth.set_setting(db, "proxy_domains", proxy_domains.strip())
-    auth.set_setting(db, "youtube_proxy_url", youtube_proxy_url.strip())
     if timeutil.is_valid_timezone(timezone):
         auth.set_setting(db, "timezone", timezone)
 
     modules.push_downloader_converter_config()
     return RedirectResponse("/admin?tab=settings&saved=1", status_code=303)
+
+
+@app.post("/admin/settings/youtube-proxy")
+def admin_youtube_proxy(
+    youtube_proxy_url: str = Form(""),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_dep),
+):
+    # Its own small form/route (like /admin/modules) rather than a field in
+    # the big settings form - it now sits in its own card next to Cookies
+    # YouTube rather than buried inside "Налаштування", so it gets its own
+    # save action too instead of requiring every other setting to be
+    # resubmitted alongside it.
+    auth.set_setting(db, "youtube_proxy_url", youtube_proxy_url.strip())
+    modules.push_downloader_converter_config()
+    return RedirectResponse("/admin?tab=settings&youtube_proxy_saved=1", status_code=303)
 
 
 @app.post("/admin/modules")
