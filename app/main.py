@@ -1127,13 +1127,19 @@ async def admin_errors(kind: str, db: Session = Depends(get_db), _=Depends(requi
 @app.post("/admin/delete/{job_id}")
 async def admin_delete(job_id: str, _=Depends(require_admin_dep)):
     await proxy_helpers.proxy_json(config.DOWNLOADER_CONVERTER_URL, "DELETE", f"/admin/jobs/download/{job_id}")
-    return RedirectResponse("/admin?tab=stats", status_code=303)
+    # admin.html's own JS intercepts this form's submit and removes the row
+    # in place (see "Delete a history row (no page reload)") - this
+    # redirect only fires as the fallback for whatever reaches the server
+    # without that JS having run (no-JS, an extension blocking fetch, a
+    # race), and it belongs back on the tab the row was deleted from, not
+    # wherever "stats" happens to be.
+    return RedirectResponse("/admin?tab=history", status_code=303)
 
 
 @app.post("/admin/delete-conversion/{job_id}")
 async def admin_delete_conversion(job_id: str, _=Depends(require_admin_dep)):
     await proxy_helpers.proxy_json(config.DOWNLOADER_CONVERTER_URL, "DELETE", f"/admin/jobs/convert/{job_id}")
-    return RedirectResponse("/admin?tab=stats", status_code=303)
+    return RedirectResponse("/admin?tab=history", status_code=303)
 
 
 @app.post("/admin/users/add")
