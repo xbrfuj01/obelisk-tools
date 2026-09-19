@@ -324,7 +324,53 @@ def _subtitle_options(info):
     return result
 
 
+# Substrings of the actual error text yt-dlp raises when a video is
+# blocked specifically for the requester's own country - as opposed to any
+# other extraction failure, which retrying through the proxy wouldn't fix
+# and would just add a pointless second round-trip before the real error.
+# Matched on the message itself rather than a specific exception class,
+# since different extractors (and different yt-dlp versions) wrap the same
+# underlying reason in different exception types.
+_GEO_BLOCK_MARKERS = (
+    "country domain due to a legal complaint",
+    "not available in your country",
+    "not made this video available in your country",
+    "blocked it in your country",
+)
+
+
+def _is_geo_block_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(marker in msg for marker in _GEO_BLOCK_MARKERS)
+
+
 def _extract_with_cookie_fallback(ydl_opts, url, *, download, should_retry=lambda: True, before_retry=None):
+    """Thin wrapper around _extract_with_cookie_fallback_attempt that adds
+    exactly one more retry - through the configured proxy - but only when
+    the attempt above failed with a geo-block error (_is_geo_block_error)
+    and wasn't already going through the proxy. A successful video never
+    reaches this except branch at all, so this can't add latency to the
+    common case; a video that fails for any other reason (private, deleted,
+    network error) still fails on the first try, since a proxy wouldn't
+    change that outcome."""
+    try:
+        return _extract_with_cookie_fallback_attempt(
+            ydl_opts, url, download=download, should_retry=should_retry, before_retry=before_retry,
+        )
+    except Exception as e:
+        proxy_url = settings_store.get("proxy_url", "")
+        if not proxy_url or ydl_opts.get("proxy") or not should_retry() or not _is_geo_block_error(e):
+            raise
+        if before_retry:
+            before_retry()
+        proxied_opts = dict(ydl_opts)
+        proxied_opts["proxy"] = proxy_url
+        return _extract_with_cookie_fallback_attempt(
+            proxied_opts, url, download=download, should_retry=should_retry, before_retry=before_retry,
+        )
+
+
+def _extract_with_cookie_fallback_attempt(ydl_opts, url, *, download, should_retry=lambda: True, before_retry=None):
     """Tries anonymously first - most videos don't need an authenticated
     session, and the cookies belong to one specific account that's better
     exercised sparingly than spent on every single request. Only retries
