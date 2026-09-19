@@ -482,11 +482,6 @@
     <section>
       <h2>Cookies YouTube</h2>
       <div class="card">
-        <p class="hint">
-          Деякі відео YouTube віддає лише авторизованим користувачам. Щоб їх качало, встав сюди вміст cookies.txt
-          (Netscape-формат) залогіненого акаунта — наприклад, розширенням браузера "Get cookies.txt LOCALLY" на youtube.com.
-          Файл зберігається на сервері й дає доступ до акаунта, поки cookies дійсні — краще використати для цього окремий акаунт.
-        </p>
         {% if has_cookies %}
         <p class="success">✓ Cookies налаштовано.</p>
         {% else %}
@@ -495,15 +490,13 @@
         {% if request.query_params.get('cookies_error') == 'empty' %}<p class="error">Оберіть файл cookies.txt</p>{% endif %}
         <div class="cookies-actions">
           <form method="post" action="/admin/settings/cookies" id="cookies-form">
-            <label>Файл cookies.txt
-              <input type="file" accept=".txt,text/plain" id="cookies-file-input" required>
-            </label>
+            <input type="file" accept=".txt,text/plain" id="cookies-file-input" aria-label="Файл cookies.txt" required>
             <textarea name="cookies_content" id="cookies-content-textarea" hidden></textarea>
-            <button type="submit" id="cookies-save-btn">Зберегти cookies</button>
+            <button type="submit" id="cookies-save-btn" class="btn-compact">Зберегти cookies</button>
           </form>
           {% if has_cookies %}
           <form method="post" action="/admin/settings/cookies/clear" class="inline-form" id="clear-cookies-form">
-            <button type="button" class="btn-secondary open-confirm-modal" data-form-id="clear-cookies-form" data-title="Прибрати cookies"
+            <button type="button" class="btn-secondary btn-compact open-confirm-modal" data-form-id="clear-cookies-form" data-title="Прибрати cookies"
               data-text="Видалити збережені cookies? Відео, що вимагають авторизації, перестануть качатись.">Прибрати cookies</button>
           </form>
           {% endif %}

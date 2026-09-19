@@ -1241,6 +1241,11 @@ button.stat-card:hover { border-color: var(--border-hover); }
 
 .cookies-actions label { margin: 0; }
 
+.btn-compact {
+  padding: 8px 14px;
+  font-size: 0.85rem;
+}
+
 [data-tab-panel="settings"] h2 { margin: 24px 0 10px; }
 [data-tab-panel="settings"] > section:first-child h2 { margin-top: 0; }
 [data-tab-panel="settings"] .card { padding: 16px; gap: 10px; }
