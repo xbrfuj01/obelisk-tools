@@ -446,30 +446,29 @@
         </label>
       </div>
 
-      <div class="settings-group-title-row">
-        <p class="settings-group-title">Проксі для заблокованих сайтів</p>
-        <span class="proxy-status" id="proxy-status" hidden></span>
-      </div>
+      <hr class="settings-divider">
+
+      <p class="settings-group-title">Проксі для заблокованих сайтів</p>
       <div class="grid-2">
         <label>Адреса проксі (напр. socks5h://user:pass@host:1080)
-          <input type="text" name="proxy_url" value="{{ proxy_url }}" placeholder="залиште порожнім, щоб не використовувати проксі" autocomplete="off">
+          <div class="input-with-status">
+            <input type="text" name="proxy_url" value="{{ proxy_url }}" placeholder="залиште порожнім, щоб не використовувати проксі" autocomplete="off">
+            <span class="proxy-status" id="proxy-status" hidden></span>
+          </div>
         </label>
         <label>Домени через проксі (через кому)
           <input type="text" name="proxy_domains" value="{{ proxy_domains }}" autocomplete="off">
         </label>
       </div>
 
-      <div class="settings-group-title-row">
-        <p class="settings-group-title">Проксі для YouTube</p>
-        <span class="proxy-status" id="youtube-proxy-status" hidden></span>
-      </div>
-      <p class="hint">
-        Окремий проксі саме для YouTube — не пов'язаний зі списком доменів вище.
-        Використовується лише як автоматична друга спроба, коли YouTube відмовляє
-        напряму (гео-блок за скаргою тощо), тож на швидкість звичайних відео не впливає.
-      </p>
+      <hr class="settings-divider">
+
+      <p class="settings-group-title">Проксі для YouTube</p>
       <label>Адреса проксі для YouTube (напр. socks5h://user:pass@host:1080)
-        <input type="text" name="youtube_proxy_url" value="{{ youtube_proxy_url }}" placeholder="залиште порожнім, щоб не використовувати" autocomplete="off">
+        <div class="input-with-status">
+          <input type="text" name="youtube_proxy_url" value="{{ youtube_proxy_url }}" placeholder="залиште порожнім, щоб не використовувати" autocomplete="off">
+          <span class="proxy-status" id="youtube-proxy-status" hidden></span>
+        </div>
       </label>
 
       <button type="submit">Зберегти</button>
@@ -755,7 +754,8 @@
     if (!el) return;
     el.hidden = false;
     el.className = "proxy-status checking";
-    el.textContent = "Перевірка з'єднання...";
+    el.textContent = "…";
+    el.title = "Перевірка з'єднання...";
     fetch("/admin/api/proxy-status?which=" + which)
       .then(function (res) { return res.json(); })
       .then(function (data) {
@@ -764,11 +764,13 @@
           return;
         }
         el.className = "proxy-status " + (data.active ? "active" : "inactive");
-        el.textContent = data.active ? "✓ З'єднання активне" : "✕ Немає з'єднання";
+        el.textContent = data.active ? "✓" : "✕";
+        el.title = data.active ? "З'єднання активне" : "Немає з'єднання";
       })
       .catch(function () {
         el.className = "proxy-status inactive";
-        el.textContent = "✕ Не вдалось перевірити";
+        el.textContent = "✕";
+        el.title = "Не вдалось перевірити";
       });
   }
 
