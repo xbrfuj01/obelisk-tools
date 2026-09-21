@@ -454,36 +454,28 @@
       <div class="card settings-tight">
         <div class="settings-form">
           <p class="settings-group-title">Проксі для заблокованих сайтів</p>
-          <label>Адреса проксі (напр. socks5h://user:pass@host:1080)
-            <div class="input-with-status">
-              <input type="text" name="proxy_url" value="{{ proxy_url }}" placeholder="залиште порожнім, щоб не використовувати проксі" autocomplete="off"
-                class="autosave-input" data-save-url="/admin/api/settings/proxy-url" data-save-field="proxy_url"
-                data-status-el="proxy-status" data-check-connection="default">
-              <span class="proxy-status" id="proxy-status" hidden></span>
-            </div>
-          </label>
+          <div class="input-with-status">
+            <input type="text" name="proxy_url" value="{{ proxy_url }}" placeholder="Адреса проксі (напр. socks5h://user:pass@host:1080)" autocomplete="off"
+              aria-label="Адреса проксі" class="autosave-input" data-save-url="/admin/api/settings/proxy-url" data-save-field="proxy_url"
+              data-status-el="proxy-status" data-check-connection="default">
+            <span class="proxy-status" id="proxy-status" hidden></span>
+          </div>
 
           <p class="settings-group-title">Домени через проксі</p>
-          <label>Через кому
-            <div class="input-with-status">
-              <input type="text" name="proxy_domains" value="{{ proxy_domains }}" autocomplete="off"
-                class="autosave-input" data-save-url="/admin/api/settings/proxy-domains" data-save-field="proxy_domains"
-                data-status-el="proxy-domains-status">
-              <span class="proxy-status" id="proxy-domains-status" hidden></span>
-            </div>
-          </label>
-        </div>
+          <div class="input-with-status">
+            <input type="text" name="proxy_domains" value="{{ proxy_domains }}" placeholder="Через кому" autocomplete="off"
+              aria-label="Домени через проксі" class="autosave-input" data-save-url="/admin/api/settings/proxy-domains" data-save-field="proxy_domains"
+              data-status-el="proxy-domains-status">
+            <span class="proxy-status" id="proxy-domains-status" hidden></span>
+          </div>
 
-        <div class="settings-form">
-          <p class="settings-group-title settings-flush">Проксі для YouTube</p>
-          <label>Адреса проксі для YouTube (напр. socks5h://user:pass@host:1080)
-            <div class="input-with-status">
-              <input type="text" name="youtube_proxy_url" value="{{ youtube_proxy_url }}" placeholder="залиште порожнім, щоб не використовувати" autocomplete="off"
-                class="autosave-input" data-save-url="/admin/api/settings/youtube-proxy-url" data-save-field="youtube_proxy_url"
-                data-status-el="youtube-proxy-status" data-check-connection="youtube">
-              <span class="proxy-status" id="youtube-proxy-status" hidden></span>
-            </div>
-          </label>
+          <p class="settings-group-title">Проксі для YouTube</p>
+          <div class="input-with-status">
+            <input type="text" name="youtube_proxy_url" value="{{ youtube_proxy_url }}" placeholder="Адреса проксі для YouTube (напр. socks5h://user:pass@host:1080)" autocomplete="off"
+              aria-label="Адреса проксі для YouTube" class="autosave-input" data-save-url="/admin/api/settings/youtube-proxy-url" data-save-field="youtube_proxy_url"
+              data-status-el="youtube-proxy-status" data-check-connection="youtube">
+            <span class="proxy-status" id="youtube-proxy-status" hidden></span>
+          </div>
         </div>
 
         <p class="settings-group-title settings-flush">Cookies YouTube</p>
