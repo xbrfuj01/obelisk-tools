@@ -1225,45 +1225,30 @@ button.stat-card:hover { border-color: var(--border-hover); }
 
 .maintenance-actions form { margin: 0; }
 
-/* Two-column settings block - a gap, not a rule, marks the split for now.
-   Right-column items are plain siblings (not one shared form) so more
-   than one can stack in that column, each auto-placed on its own row -
-   the left column spans every row that creates (grid-row: 1 / -1 tracks
-   however many rows the right column ends up needing). */
-.settings-grid {
-  background: linear-gradient(180deg, var(--bg-card), var(--card-shade));
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 22px 32px;
-  box-shadow: 0 12px 30px -18px rgba(0, 0, 0, 0.6);
-}
-
-.settings-grid > .settings-col-left { grid-column: 1; grid-row: 1 / -1; }
-.settings-grid > .settings-col-right { grid-column: 2; }
-
 /* .settings-form used to just be a marker class paired with .card, which
-   supplied this flex layout - now these are grid items in their own
-   right (no .card), so they need it directly. */
-.settings-col-left,
-.settings-col-right,
+   supplied this flex layout on its own - kept as a standalone rule since
+   a form nested inside .settings-tight (see below) isn't itself .card. */
 .settings-form {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-/* Gap between the stacked settings blocks (Обслуговування+Модулі /
-   Загальні налаштування+Проксі / Cookies), not just within each. */
-[data-tab-panel="settings"] > section + section { margin-top: 22px; }
+/* Обслуговування|Модулі and Загальні налаштування|Проксі are each their
+   own pair of independent .card blocks side by side (.grid-2) - gap
+   between the two stacked pairs. */
+[data-tab-panel="settings"] > .grid-2 + .grid-2 { margin-top: 22px; }
 
-@media (max-width: 800px) {
-  .settings-grid { grid-template-columns: 1fr; }
-  .settings-grid > .settings-col-left,
-  .settings-grid > .settings-col-right { grid-column: 1; grid-row: auto; }
-}
+/* The "Проксі" card: proxy+domains, YouTube proxy, and Cookies are meant
+   to read as one continuous block with no space between them (unlike the
+   gap between separate .card blocks elsewhere) - zero gap at the outer
+   level, each .settings-form inside still keeps its own normal spacing
+   between its own group-title/label/button. .settings-flush knocks out
+   the group-title's usual top padding for the two joins that need to
+   sit flush (Домени -> Проксі для YouTube -> Cookies), without touching
+   Проксі для заблокованих сайтів -> Домени, which stays as normal
+   within-form spacing. */
+.settings-tight .settings-group-title.settings-flush { padding-top: 0; margin-top: 0; }
 
 .cookies-actions {
   display: flex;
@@ -1289,8 +1274,9 @@ button.stat-card:hover { border-color: var(--border-hover); }
 }
 
 [data-tab-panel="settings"] h2 { margin: 24px 0 10px; }
-[data-tab-panel="settings"] > section:first-child h2 { margin-top: 0; }
+[data-tab-panel="settings"] > .grid-2:first-child h2 { margin-top: 0; }
 [data-tab-panel="settings"] .card { padding: 16px; gap: 10px; }
+[data-tab-panel="settings"] .card.settings-tight { gap: 0; }
 [data-tab-panel="settings"] label { gap: 4px; }
 [data-tab-panel="settings"] input, [data-tab-panel="settings"] select { padding: 8px 12px; font-size: 0.88rem; }
 [data-tab-panel="settings"] .grid-2, [data-tab-panel="settings"] .grid-3, [data-tab-panel="settings"] .grid-4 { gap: 10px; }

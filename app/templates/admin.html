@@ -375,28 +375,28 @@
 </div>
 
 <div class="tab-panel" data-tab-panel="settings">
-  <section>
-    <div class="settings-grid">
-      <div class="settings-col-left">
-        <h2>Обслуговування</h2>
-        <div class="maintenance-actions">
-          <form method="post" action="/admin/clear-ytdlp-cache">
-            <button type="submit">Очистити кеш yt-dlp</button>
-          </form>
-          <form method="post" action="/admin/wipe-data">
-            <button type="submit">Очистити дані</button>
-          </form>
-          <form method="post" action="/admin/delete-all-history" class="inline-form" id="delete-all-history-form">
-            <button type="button" class="btn-secondary open-confirm-modal" data-form-id="delete-all-history-form"
-              data-title="Видалити всю історію" data-text="Видалити всю історію завантажень і конвертацій (разом із файлами)? Активні (ще не завершені) задачі не зачепить. Дію не можна скасувати.">
-              Видалити всю історію
-            </button>
-          </form>
-        </div>
+  <div class="grid-2">
+    <section>
+      <h2>Обслуговування</h2>
+      <div class="card maintenance-actions">
+        <form method="post" action="/admin/clear-ytdlp-cache">
+          <button type="submit">Очистити кеш yt-dlp</button>
+        </form>
+        <form method="post" action="/admin/wipe-data">
+          <button type="submit">Очистити дані</button>
+        </form>
+        <form method="post" action="/admin/delete-all-history" class="inline-form" id="delete-all-history-form">
+          <button type="button" class="btn-secondary open-confirm-modal" data-form-id="delete-all-history-form"
+            data-title="Видалити всю історію" data-text="Видалити всю історію завантажень і конвертацій (разом із файлами)? Активні (ще не завершені) задачі не зачепить. Дію не можна скасувати.">
+            Видалити всю історію
+          </button>
+        </form>
       </div>
+    </section>
 
-      <form method="post" action="/admin/modules" class="settings-form settings-col-right">
-        <h2>Модулі</h2>
+    <section>
+      <h2>Модулі</h2>
+      <form method="post" action="/admin/modules" class="card settings-form">
         <label class="checkbox-row">
           <input type="checkbox" name="downloader_converter" {% if module_enabled.downloader_converter %}checked{% endif %}>
           <span>Завантажувач і конвертер відео</span>
@@ -411,13 +411,13 @@
         </label>
         <button type="submit">Зберегти</button>
       </form>
-    </div>
-  </section>
+    </section>
+  </div>
 
-  <section>
-    <div class="settings-grid">
-      <form method="post" action="/admin/settings" class="settings-form settings-col-left">
-        <p class="settings-group-title">Загальні налаштування</p>
+  <div class="grid-2">
+    <section>
+      <h2>Загальні налаштування</h2>
+      <form method="post" action="/admin/settings" class="card settings-form">
         <div class="grid-2">
           <label>Автоочищення (г)
             <input type="number" name="retention_hours" value="{{ retention_hours }}" min="1" required>
@@ -447,61 +447,62 @@
         </div>
         <button type="submit">Зберегти</button>
       </form>
+    </section>
 
-      <form method="post" action="/admin/settings/proxy" class="settings-form settings-col-right">
-        <p class="settings-group-title">Проксі для заблокованих сайтів</p>
-        <label>Адреса проксі (напр. socks5h://user:pass@host:1080)
-          <div class="input-with-status">
-            <input type="text" name="proxy_url" value="{{ proxy_url }}" placeholder="залиште порожнім, щоб не використовувати проксі" autocomplete="off">
-            <span class="proxy-status" id="proxy-status" hidden></span>
-          </div>
-        </label>
+    <section>
+      <h2>Проксі</h2>
+      <div class="card settings-tight">
+        <form method="post" action="/admin/settings/proxy" class="settings-form">
+          <p class="settings-group-title">Проксі для заблокованих сайтів</p>
+          <label>Адреса проксі (напр. socks5h://user:pass@host:1080)
+            <div class="input-with-status">
+              <input type="text" name="proxy_url" value="{{ proxy_url }}" placeholder="залиште порожнім, щоб не використовувати проксі" autocomplete="off">
+              <span class="proxy-status" id="proxy-status" hidden></span>
+            </div>
+          </label>
 
-        <p class="settings-group-title">Домени через проксі</p>
-        <label>Через кому
-          <input type="text" name="proxy_domains" value="{{ proxy_domains }}" autocomplete="off">
-        </label>
+          <p class="settings-group-title">Домени через проксі</p>
+          <label>Через кому
+            <input type="text" name="proxy_domains" value="{{ proxy_domains }}" autocomplete="off">
+          </label>
 
-        <button type="submit" class="btn-compact">Зберегти</button>
-      </form>
-
-      <form method="post" action="/admin/settings/youtube-proxy" class="settings-form settings-col-right">
-        <p class="settings-group-title">Проксі для YouTube</p>
-        <label>Адреса проксі для YouTube (напр. socks5h://user:pass@host:1080)
-          <div class="input-with-status">
-            <input type="text" name="youtube_proxy_url" value="{{ youtube_proxy_url }}" placeholder="залиште порожнім, щоб не використовувати" autocomplete="off">
-            <span class="proxy-status" id="youtube-proxy-status" hidden></span>
-          </div>
-        </label>
-        <button type="submit" class="btn-compact">Зберегти</button>
-      </form>
-    </div>
-  </section>
-
-  <section>
-    <h2>Cookies YouTube</h2>
-    <div class="card">
-      {% if has_cookies %}
-      <p class="success">✓ Cookies налаштовано.</p>
-      {% else %}
-      <p class="hint">Cookies не налаштовано.</p>
-      {% endif %}
-      {% if request.query_params.get('cookies_error') == 'empty' %}<p class="error">Оберіть файл cookies.txt</p>{% endif %}
-      <div class="cookies-actions">
-        <form method="post" action="/admin/settings/cookies" id="cookies-form">
-          <input type="file" accept=".txt,text/plain" id="cookies-file-input" aria-label="Файл cookies.txt" required>
-          <textarea name="cookies_content" id="cookies-content-textarea" hidden></textarea>
-          <button type="submit" id="cookies-save-btn" class="btn-compact">Зберегти cookies</button>
+          <button type="submit" class="btn-compact">Зберегти</button>
         </form>
+
+        <form method="post" action="/admin/settings/youtube-proxy" class="settings-form">
+          <p class="settings-group-title settings-flush">Проксі для YouTube</p>
+          <label>Адреса проксі для YouTube (напр. socks5h://user:pass@host:1080)
+            <div class="input-with-status">
+              <input type="text" name="youtube_proxy_url" value="{{ youtube_proxy_url }}" placeholder="залиште порожнім, щоб не використовувати" autocomplete="off">
+              <span class="proxy-status" id="youtube-proxy-status" hidden></span>
+            </div>
+          </label>
+          <button type="submit" class="btn-compact">Зберегти</button>
+        </form>
+
+        <p class="settings-group-title settings-flush">Cookies YouTube</p>
         {% if has_cookies %}
-        <form method="post" action="/admin/settings/cookies/clear" class="inline-form" id="clear-cookies-form">
-          <button type="button" class="btn-secondary btn-compact open-confirm-modal" data-form-id="clear-cookies-form" data-title="Прибрати cookies"
-            data-text="Видалити збережені cookies? Відео, що вимагають авторизації, перестануть качатись.">Прибрати cookies</button>
-        </form>
+        <p class="success">✓ Cookies налаштовано.</p>
+        {% else %}
+        <p class="hint">Cookies не налаштовано.</p>
         {% endif %}
+        {% if request.query_params.get('cookies_error') == 'empty' %}<p class="error">Оберіть файл cookies.txt</p>{% endif %}
+        <div class="cookies-actions">
+          <form method="post" action="/admin/settings/cookies" id="cookies-form">
+            <input type="file" accept=".txt,text/plain" id="cookies-file-input" aria-label="Файл cookies.txt" required>
+            <textarea name="cookies_content" id="cookies-content-textarea" hidden></textarea>
+            <button type="submit" id="cookies-save-btn" class="btn-compact">Зберегти cookies</button>
+          </form>
+          {% if has_cookies %}
+          <form method="post" action="/admin/settings/cookies/clear" class="inline-form" id="clear-cookies-form">
+            <button type="button" class="btn-secondary btn-compact open-confirm-modal" data-form-id="clear-cookies-form" data-title="Прибрати cookies"
+              data-text="Видалити збережені cookies? Відео, що вимагають авторизації, перестануть качатись.">Прибрати cookies</button>
+          </form>
+          {% endif %}
+        </div>
       </div>
-    </div>
-  </section>
+    </section>
+  </div>
 </div>
 
 <div class="modal-overlay" id="password-modal" hidden>
