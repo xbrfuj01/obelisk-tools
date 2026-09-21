@@ -1250,8 +1250,6 @@ def admin_settings(
     max_concurrent_conversions: int = Form(...),
     max_upload_mb: int = Form(...),
     session_max_age_days: int = Form(...),
-    proxy_url: str = Form(""),
-    proxy_domains: str = Form(""),
     timezone: str = Form(""),
     db: Session = Depends(get_db),
     _=Depends(require_admin_dep),
@@ -1262,13 +1260,27 @@ def admin_settings(
     auth.set_setting(db, "max_concurrent_conversions", str(max_concurrent_conversions))
     auth.set_setting(db, "max_upload_mb", str(max_upload_mb))
     auth.set_setting(db, "session_max_age_days", str(session_max_age_days))
-    auth.set_setting(db, "proxy_url", proxy_url.strip())
-    auth.set_setting(db, "proxy_domains", proxy_domains.strip())
     if timeutil.is_valid_timezone(timezone):
         auth.set_setting(db, "timezone", timezone)
 
     modules.push_downloader_converter_config()
     return RedirectResponse("/admin?tab=settings&saved=1", status_code=303)
+
+
+@app.post("/admin/settings/proxy")
+def admin_proxy_settings(
+    proxy_url: str = Form(""),
+    proxy_domains: str = Form(""),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_dep),
+):
+    # Split from admin_settings above so "Проксі для заблокованих сайтів" +
+    # "Домени через проксі" can sit in the settings grid's right column as
+    # their own form, independent of the left column's general settings.
+    auth.set_setting(db, "proxy_url", proxy_url.strip())
+    auth.set_setting(db, "proxy_domains", proxy_domains.strip())
+    modules.push_downloader_converter_config()
+    return RedirectResponse("/admin?tab=settings&proxy_saved=1", status_code=303)
 
 
 @app.post("/admin/settings/youtube-proxy")

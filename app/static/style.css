@@ -1217,11 +1217,55 @@ button.stat-card:hover { border-color: var(--border-hover); }
 .proxy-status.inactive { color: var(--error); }
 
 .maintenance-actions {
+  display: flex;
   flex-direction: row;
   flex-wrap: wrap;
+  gap: 10px;
 }
 
 .maintenance-actions form { margin: 0; }
+
+/* Two-column settings block with a vertical rule down the middle. Right-
+   column items are plain siblings (not one shared form) so more than one
+   can stack in that column, each auto-placed on its own row - the left
+   column and the divider both span every row that creates (grid-row: 1 /
+   -1 tracks however many rows the right column ends up needing). */
+.settings-grid {
+  background: linear-gradient(180deg, var(--bg-card), var(--card-shade));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: grid;
+  grid-template-columns: 1fr 1px 1fr;
+  gap: 18px 20px;
+  box-shadow: 0 12px 30px -18px rgba(0, 0, 0, 0.6);
+}
+
+.settings-grid > .settings-col-left { grid-column: 1; grid-row: 1 / -1; }
+.settings-grid > .settings-grid-divider {
+  grid-column: 2;
+  grid-row: 1 / -1;
+  background: var(--border);
+}
+.settings-grid > .settings-col-right { grid-column: 3; }
+
+/* .settings-form used to just be a marker class paired with .card, which
+   supplied this flex layout - now these are grid items in their own
+   right (no .card), so they need it directly. */
+.settings-col-left,
+.settings-col-right,
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+@media (max-width: 800px) {
+  .settings-grid { grid-template-columns: 1fr; }
+  .settings-grid > .settings-col-left,
+  .settings-grid > .settings-col-right { grid-column: 1; grid-row: auto; }
+  .settings-grid > .settings-grid-divider { display: none; }
+}
 
 .cookies-actions {
   display: flex;

@@ -376,101 +376,105 @@
 
 <div class="tab-panel" data-tab-panel="settings">
   <section>
-    <h2>Обслуговування</h2>
-    <div class="card maintenance-actions">
-      <form method="post" action="/admin/clear-ytdlp-cache">
-        <button type="submit">Очистити кеш yt-dlp</button>
-      </form>
-      <form method="post" action="/admin/wipe-data">
-        <button type="submit">Очистити дані</button>
-      </form>
-      <form method="post" action="/admin/delete-all-history" class="inline-form" id="delete-all-history-form">
-        <button type="button" class="btn-secondary open-confirm-modal" data-form-id="delete-all-history-form"
-          data-title="Видалити всю історію" data-text="Видалити всю історію завантажень і конвертацій (разом із файлами)? Активні (ще не завершені) задачі не зачепить. Дію не можна скасувати.">
-          Видалити всю історію
-        </button>
+    <div class="settings-grid">
+      <div class="settings-col-left">
+        <h2>Обслуговування</h2>
+        <div class="maintenance-actions">
+          <form method="post" action="/admin/clear-ytdlp-cache">
+            <button type="submit">Очистити кеш yt-dlp</button>
+          </form>
+          <form method="post" action="/admin/wipe-data">
+            <button type="submit">Очистити дані</button>
+          </form>
+          <form method="post" action="/admin/delete-all-history" class="inline-form" id="delete-all-history-form">
+            <button type="button" class="btn-secondary open-confirm-modal" data-form-id="delete-all-history-form"
+              data-title="Видалити всю історію" data-text="Видалити всю історію завантажень і конвертацій (разом із файлами)? Активні (ще не завершені) задачі не зачепить. Дію не можна скасувати.">
+              Видалити всю історію
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <div class="settings-grid-divider"></div>
+
+      <form method="post" action="/admin/modules" class="settings-form settings-col-right">
+        <h2>Модулі</h2>
+        <label class="checkbox-row">
+          <input type="checkbox" name="downloader_converter" {% if module_enabled.downloader_converter %}checked{% endif %}>
+          <span>Завантажувач і конвертер відео</span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" name="metadata" {% if module_enabled.metadata %}checked{% endif %}>
+          <span>Редактор метаданих</span>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" name="scroll_recorder" {% if module_enabled.scroll_recorder %}checked{% endif %}>
+          <span>Scroll Recorder</span>
+        </label>
+        <button type="submit">Зберегти</button>
       </form>
     </div>
   </section>
 
   <section>
-    <h2>Модулі</h2>
-    <form method="post" action="/admin/modules" class="card settings-form">
-      <p class="hint">Вимкнений модуль недоступний звичайним користувачам (пише "Модуль недоступний"), адмін бачить і відкриває його як завжди.</p>
-      <label class="checkbox-row">
-        <input type="checkbox" name="downloader_converter" {% if module_enabled.downloader_converter %}checked{% endif %}>
-        <span>Завантажувач і конвертер відео</span>
-      </label>
-      <label class="checkbox-row">
-        <input type="checkbox" name="metadata" {% if module_enabled.metadata %}checked{% endif %}>
-        <span>Редактор метаданих</span>
-      </label>
-      <label class="checkbox-row">
-        <input type="checkbox" name="scroll_recorder" {% if module_enabled.scroll_recorder %}checked{% endif %}>
-        <span>Scroll Recorder</span>
-      </label>
-      <button type="submit">Зберегти</button>
-    </form>
-  </section>
-
-  <section>
-    <h2>Налаштування</h2>
-    <form method="post" action="/admin/settings" class="card settings-form">
-
-      <p class="settings-group-title">Загальні налаштування</p>
-      <div class="grid-4">
-        <label>Автоочищення (г)
-          <input type="number" name="retention_hours" value="{{ retention_hours }}" min="1" required>
-        </label>
-        <label>Перевірка застарілих файлів (хв)
-          <input type="number" name="cleanup_interval_minutes" value="{{ cleanup_interval_minutes }}" min="1" required>
-        </label>
-        <label>Макс. одночасних завантажень
-          <input type="number" name="max_concurrent_downloads" value="{{ max_concurrent_downloads }}" min="1" required>
-        </label>
-        <label>Макс. одночасних конвертацій
-          <input type="number" name="max_concurrent_conversions" value="{{ max_concurrent_conversions }}" min="1" required>
-        </label>
-        <label>Макс. розмір файлу (МБ)
-          <input type="number" name="max_upload_mb" value="{{ max_upload_mb }}" min="1" required>
-        </label>
-        <label>Сесія на пристрої (днів)
-          <input type="number" name="session_max_age_days" value="{{ session_max_age_days }}" min="1" required>
-        </label>
-        <label>Часовий пояс
-          <select name="timezone">
-            {% for tz in timezones %}
-              <option value="{{ tz }}" {% if tz == timezone %}selected{% endif %}>{{ tz }}</option>
-            {% endfor %}
-          </select>
-        </label>
-      </div>
-
-      <hr class="settings-divider">
-
-      <p class="settings-group-title">Проксі для заблокованих сайтів</p>
-      <label>Адреса проксі (напр. socks5h://user:pass@host:1080)
-        <div class="input-with-status">
-          <input type="text" name="proxy_url" value="{{ proxy_url }}" placeholder="залиште порожнім, щоб не використовувати проксі" autocomplete="off">
-          <span class="proxy-status" id="proxy-status" hidden></span>
+    <div class="settings-grid">
+      <form method="post" action="/admin/settings" class="settings-form settings-col-left">
+        <p class="settings-group-title">Загальні налаштування</p>
+        <div class="grid-2">
+          <label>Автоочищення (г)
+            <input type="number" name="retention_hours" value="{{ retention_hours }}" min="1" required>
+          </label>
+          <label>Перевірка застарілих файлів (хв)
+            <input type="number" name="cleanup_interval_minutes" value="{{ cleanup_interval_minutes }}" min="1" required>
+          </label>
+          <label>Макс. одночасних завантажень
+            <input type="number" name="max_concurrent_downloads" value="{{ max_concurrent_downloads }}" min="1" required>
+          </label>
+          <label>Макс. одночасних конвертацій
+            <input type="number" name="max_concurrent_conversions" value="{{ max_concurrent_conversions }}" min="1" required>
+          </label>
+          <label>Макс. розмір файлу (МБ)
+            <input type="number" name="max_upload_mb" value="{{ max_upload_mb }}" min="1" required>
+          </label>
+          <label>Сесія на пристрої (днів)
+            <input type="number" name="session_max_age_days" value="{{ session_max_age_days }}" min="1" required>
+          </label>
+          <label>Часовий пояс
+            <select name="timezone">
+              {% for tz in timezones %}
+                <option value="{{ tz }}" {% if tz == timezone %}selected{% endif %}>{{ tz }}</option>
+              {% endfor %}
+            </select>
+          </label>
         </div>
-      </label>
+        <button type="submit">Зберегти</button>
+      </form>
 
-      <hr class="settings-divider">
+      <div class="settings-grid-divider"></div>
 
-      <p class="settings-group-title">Домени через проксі</p>
-      <label>Через кому
-        <input type="text" name="proxy_domains" value="{{ proxy_domains }}" autocomplete="off">
-      </label>
+      <form method="post" action="/admin/settings/proxy" class="settings-form settings-col-right">
+        <p class="settings-group-title">Проксі для заблокованих сайтів</p>
+        <label>Адреса проксі (напр. socks5h://user:pass@host:1080)
+          <div class="input-with-status">
+            <input type="text" name="proxy_url" value="{{ proxy_url }}" placeholder="залиште порожнім, щоб не використовувати проксі" autocomplete="off">
+            <span class="proxy-status" id="proxy-status" hidden></span>
+          </div>
+        </label>
 
-      <button type="submit">Зберегти</button>
-    </form>
-  </section>
+        <hr class="settings-divider">
 
-  <section>
-    <h2>YouTube</h2>
-    <div class="card settings-form">
-      <form method="post" action="/admin/settings/youtube-proxy">
+        <p class="settings-group-title">Домени через проксі</p>
+        <label>Через кому
+          <input type="text" name="proxy_domains" value="{{ proxy_domains }}" autocomplete="off">
+        </label>
+
+        <button type="submit" class="btn-compact">Зберегти</button>
+      </form>
+
+      <form method="post" action="/admin/settings/youtube-proxy" class="settings-form settings-col-right">
+        <hr class="settings-divider">
+
+        <p class="settings-group-title">Проксі для YouTube</p>
         <label>Адреса проксі для YouTube (напр. socks5h://user:pass@host:1080)
           <div class="input-with-status">
             <input type="text" name="youtube_proxy_url" value="{{ youtube_proxy_url }}" placeholder="залиште порожнім, щоб не використовувати" autocomplete="off">
@@ -479,9 +483,12 @@
         </label>
         <button type="submit" class="btn-compact">Зберегти</button>
       </form>
+    </div>
+  </section>
 
-      <hr class="settings-divider">
-
+  <section>
+    <h2>Cookies YouTube</h2>
+    <div class="card">
       {% if has_cookies %}
       <p class="success">✓ Cookies налаштовано.</p>
       {% else %}
