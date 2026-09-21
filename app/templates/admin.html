@@ -452,33 +452,39 @@
     <section>
       <h2>Проксі</h2>
       <div class="card settings-tight">
-        <form method="post" action="/admin/settings/proxy" class="settings-form">
+        <div class="settings-form">
           <p class="settings-group-title">Проксі для заблокованих сайтів</p>
           <label>Адреса проксі (напр. socks5h://user:pass@host:1080)
             <div class="input-with-status">
-              <input type="text" name="proxy_url" value="{{ proxy_url }}" placeholder="залиште порожнім, щоб не використовувати проксі" autocomplete="off">
+              <input type="text" name="proxy_url" value="{{ proxy_url }}" placeholder="залиште порожнім, щоб не використовувати проксі" autocomplete="off"
+                class="autosave-input" data-save-url="/admin/api/settings/proxy-url" data-save-field="proxy_url"
+                data-status-el="proxy-status" data-check-connection="default">
               <span class="proxy-status" id="proxy-status" hidden></span>
             </div>
           </label>
 
           <p class="settings-group-title">Домени через проксі</p>
           <label>Через кому
-            <input type="text" name="proxy_domains" value="{{ proxy_domains }}" autocomplete="off">
+            <div class="input-with-status">
+              <input type="text" name="proxy_domains" value="{{ proxy_domains }}" autocomplete="off"
+                class="autosave-input" data-save-url="/admin/api/settings/proxy-domains" data-save-field="proxy_domains"
+                data-status-el="proxy-domains-status">
+              <span class="proxy-status" id="proxy-domains-status" hidden></span>
+            </div>
           </label>
+        </div>
 
-          <button type="submit" class="btn-compact">Зберегти</button>
-        </form>
-
-        <form method="post" action="/admin/settings/youtube-proxy" class="settings-form">
+        <div class="settings-form">
           <p class="settings-group-title settings-flush">Проксі для YouTube</p>
           <label>Адреса проксі для YouTube (напр. socks5h://user:pass@host:1080)
             <div class="input-with-status">
-              <input type="text" name="youtube_proxy_url" value="{{ youtube_proxy_url }}" placeholder="залиште порожнім, щоб не використовувати" autocomplete="off">
+              <input type="text" name="youtube_proxy_url" value="{{ youtube_proxy_url }}" placeholder="залиште порожнім, щоб не використовувати" autocomplete="off"
+                class="autosave-input" data-save-url="/admin/api/settings/youtube-proxy-url" data-save-field="youtube_proxy_url"
+                data-status-el="youtube-proxy-status" data-check-connection="youtube">
               <span class="proxy-status" id="youtube-proxy-status" hidden></span>
             </div>
           </label>
-          <button type="submit" class="btn-compact">Зберегти</button>
-        </form>
+        </div>
 
         <p class="settings-group-title settings-flush">Cookies YouTube</p>
         {% if has_cookies %}
@@ -775,6 +781,62 @@
     checkOneProxyStatus(proxyStatusEl, "default");
     checkOneProxyStatus(youtubeProxyStatusEl, "youtube");
   }
+
+  // ---------------- Autosave inputs (проксі/домени, no Зберегти button) ----------------
+  // Saves itself a beat after the user stops typing, and again on blur as a
+  // safety net (e.g. a change followed immediately by clicking elsewhere,
+  // faster than the debounce). data-check-connection, when present, kicks
+  // off the same connectivity check as checkProxyStatus() right after a
+  // successful save, so the checkmark ends up reflecting the *new* value's
+  // real status rather than lingering as a plain "saved" tick.
+  var AUTOSAVE_DEBOUNCE_MS = 900;
+
+  document.querySelectorAll(".autosave-input").forEach(function (input) {
+    var statusEl = document.getElementById(input.dataset.statusEl);
+    var timer = null;
+    var lastSaved = input.value;
+
+    function save() {
+      var value = input.value;
+      if (value === lastSaved) return;
+      if (statusEl) {
+        statusEl.hidden = false;
+        statusEl.className = "proxy-status checking";
+        statusEl.textContent = "…";
+        statusEl.title = "Збереження...";
+      }
+      var body = new URLSearchParams();
+      body.set(input.dataset.saveField, value);
+      fetch(input.dataset.saveUrl, { method: "POST", body: body })
+        .then(function (res) {
+          if (!res.ok) throw new Error("save failed");
+          lastSaved = value;
+          if (input.dataset.checkConnection) {
+            checkOneProxyStatus(statusEl, input.dataset.checkConnection);
+          } else if (statusEl) {
+            statusEl.className = "proxy-status active";
+            statusEl.textContent = "✓";
+            statusEl.title = "Збережено";
+          }
+        })
+        .catch(function () {
+          if (statusEl) {
+            statusEl.className = "proxy-status inactive";
+            statusEl.textContent = "✕";
+            statusEl.title = "Не вдалося зберегти";
+          }
+        });
+    }
+
+    input.addEventListener("input", function () {
+      clearTimeout(timer);
+      timer = setTimeout(save, AUTOSAVE_DEBOUNCE_MS);
+    });
+    input.addEventListener("blur", function () {
+      clearTimeout(timer);
+      save();
+    });
+  });
 
   btns.forEach(function (btn) {
     btn.addEventListener("click", function () {

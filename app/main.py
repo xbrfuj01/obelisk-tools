@@ -1267,36 +1267,32 @@ def admin_settings(
     return RedirectResponse("/admin?tab=settings&saved=1", status_code=303)
 
 
-@app.post("/admin/settings/proxy")
-def admin_proxy_settings(
-    proxy_url: str = Form(""),
-    proxy_domains: str = Form(""),
-    db: Session = Depends(get_db),
-    _=Depends(require_admin_dep),
-):
-    # Split from admin_settings above so "Проксі для заблокованих сайтів" +
-    # "Домени через проксі" can sit in the settings grid's right column as
-    # their own form, independent of the left column's general settings.
-    auth.set_setting(db, "proxy_url", proxy_url.strip())
-    auth.set_setting(db, "proxy_domains", proxy_domains.strip())
+def _autosave_setting(db: Session, key: str, value: str):
+    """Shared body for the /admin/api/settings/* autosave endpoints below -
+    each just persists one field and re-pushes the module config, no
+    RedirectResponse since these are called by fetch() rather than a real
+    form submit (there's no button to submit anymore; the input saves
+    itself on blur/typing-pause - see admin.html's autosave-input JS)."""
+    auth.set_setting(db, key, value.strip())
     modules.push_downloader_converter_config()
-    return RedirectResponse("/admin?tab=settings&proxy_saved=1", status_code=303)
+    return {"ok": True}
 
 
-@app.post("/admin/settings/youtube-proxy")
-def admin_youtube_proxy(
-    youtube_proxy_url: str = Form(""),
-    db: Session = Depends(get_db),
-    _=Depends(require_admin_dep),
+@app.post("/admin/api/settings/proxy-url")
+def admin_save_proxy_url(proxy_url: str = Form(""), db: Session = Depends(get_db), _=Depends(require_admin_dep)):
+    return _autosave_setting(db, "proxy_url", proxy_url)
+
+
+@app.post("/admin/api/settings/proxy-domains")
+def admin_save_proxy_domains(proxy_domains: str = Form(""), db: Session = Depends(get_db), _=Depends(require_admin_dep)):
+    return _autosave_setting(db, "proxy_domains", proxy_domains)
+
+
+@app.post("/admin/api/settings/youtube-proxy-url")
+def admin_save_youtube_proxy_url(
+    youtube_proxy_url: str = Form(""), db: Session = Depends(get_db), _=Depends(require_admin_dep),
 ):
-    # Its own small form/route (like /admin/modules) rather than a field in
-    # the big settings form - it now sits in its own card next to Cookies
-    # YouTube rather than buried inside "Налаштування", so it gets its own
-    # save action too instead of requiring every other setting to be
-    # resubmitted alongside it.
-    auth.set_setting(db, "youtube_proxy_url", youtube_proxy_url.strip())
-    modules.push_downloader_converter_config()
-    return RedirectResponse("/admin?tab=settings&youtube_proxy_saved=1", status_code=303)
+    return _autosave_setting(db, "youtube_proxy_url", youtube_proxy_url)
 
 
 @app.post("/admin/modules")
