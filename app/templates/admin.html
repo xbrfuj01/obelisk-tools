@@ -478,24 +478,19 @@
           </div>
 
           <p class="settings-group-title">Cookies YouTube</p>
-          {% if has_cookies %}
-          <p class="success">✓ Cookies налаштовано.</p>
-          {% else %}
-          <p class="hint">Cookies не налаштовано.</p>
-          {% endif %}
-          {% if request.query_params.get('cookies_error') == 'empty' %}<p class="error">Оберіть файл cookies.txt</p>{% endif %}
+          <p class="{% if has_cookies %}success{% else %}hint{% endif %}" id="cookies-status-text">{% if has_cookies %}✓ Cookies налаштовано.{% else %}Cookies не налаштовано.{% endif %}</p>
           <div class="cookies-actions">
-            <form method="post" action="/admin/settings/cookies" id="cookies-form">
-              <input type="file" accept=".txt,text/plain" id="cookies-file-input" aria-label="Файл cookies.txt" required>
-              <textarea name="cookies_content" id="cookies-content-textarea" hidden></textarea>
-              <button type="submit" id="cookies-save-btn" class="btn-compact">Зберегти cookies</button>
-            </form>
-            {% if has_cookies %}
+            <button type="button" class="btn-compact" id="cookies-choose-btn">Обрати файл cookies.txt</button>
+            <input type="file" accept=".txt,text/plain" id="cookies-file-input" aria-label="Файл cookies.txt" hidden>
+            <span class="proxy-status" id="cookies-save-status" hidden></span>
             <form method="post" action="/admin/settings/cookies/clear" class="inline-form" id="clear-cookies-form">
-              <button type="button" class="btn-secondary btn-compact open-confirm-modal" data-form-id="clear-cookies-form" data-title="Прибрати cookies"
-                data-text="Видалити збережені cookies? Відео, що вимагають авторизації, перестануть качатись.">Прибрати cookies</button>
+              <button type="button" class="row-icon-btn danger open-confirm-modal" id="clear-cookies-btn" {% if not has_cookies %}hidden{% endif %}
+                data-form-id="clear-cookies-form" data-title="Прибрати cookies"
+                data-text="Видалити збережені cookies? Відео, що вимагають авторизації, перестануть качатись."
+                title="Прибрати cookies" aria-label="Прибрати cookies">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+              </button>
             </form>
-            {% endif %}
           </div>
         </div>
       </div>
@@ -1068,26 +1063,59 @@
   });
 
   // ---------------- Cookies file picker ----------------
-  // The backend route still just wants cookies_content as plain text, so
-  // rather than a multipart upload, the chosen file is read client-side
-  // and copied into a hidden textarea before the form submits normally.
+  // No more Зберегти button - picking a file reads it client-side (the
+  // backend route just wants plain text, not a multipart upload) and
+  // saves it immediately, the same auto-save-on-input pattern as the
+  // proxy fields above.
 
   var cookiesFileInput = document.getElementById("cookies-file-input");
-  var cookiesTextarea = document.getElementById("cookies-content-textarea");
-  var cookiesSaveBtn = document.getElementById("cookies-save-btn");
-  if (cookiesFileInput && cookiesTextarea && cookiesSaveBtn) {
+  var cookiesChooseBtn = document.getElementById("cookies-choose-btn");
+  var cookiesSaveStatus = document.getElementById("cookies-save-status");
+  var cookiesStatusText = document.getElementById("cookies-status-text");
+  var clearCookiesBtn = document.getElementById("clear-cookies-btn");
+
+  if (cookiesChooseBtn && cookiesFileInput) {
+    cookiesChooseBtn.addEventListener("click", function () { cookiesFileInput.click(); });
     cookiesFileInput.addEventListener("change", function () {
       var file = cookiesFileInput.files[0];
-      cookiesTextarea.value = "";
       if (!file) return;
-      cookiesSaveBtn.disabled = true;
+      cookiesSaveStatus.hidden = false;
+      cookiesSaveStatus.className = "proxy-status checking";
+      cookiesSaveStatus.textContent = "…";
+      cookiesSaveStatus.title = "Збереження...";
       var reader = new FileReader();
       reader.onload = function () {
-        cookiesTextarea.value = String(reader.result || "");
-        cookiesSaveBtn.disabled = false;
+        var content = String(reader.result || "").trim();
+        if (!content) {
+          cookiesSaveStatus.className = "proxy-status inactive";
+          cookiesSaveStatus.textContent = "✕";
+          cookiesSaveStatus.title = "Порожній файл";
+          return;
+        }
+        var body = new URLSearchParams();
+        body.set("cookies_content", content);
+        fetch("/admin/settings/cookies", { method: "POST", body: body })
+          .then(function (res) { if (!res.ok) throw new Error("save failed"); })
+          .then(function () {
+            cookiesSaveStatus.className = "proxy-status active";
+            cookiesSaveStatus.textContent = "✓";
+            cookiesSaveStatus.title = "Збережено";
+            if (cookiesStatusText) {
+              cookiesStatusText.className = "success";
+              cookiesStatusText.textContent = "✓ Cookies налаштовано.";
+            }
+            if (clearCookiesBtn) clearCookiesBtn.hidden = false;
+          })
+          .catch(function () {
+            cookiesSaveStatus.className = "proxy-status inactive";
+            cookiesSaveStatus.textContent = "✕";
+            cookiesSaveStatus.title = "Не вдалося зберегти";
+          });
       };
       reader.onerror = function () {
-        cookiesSaveBtn.disabled = false;
+        cookiesSaveStatus.className = "proxy-status inactive";
+        cookiesSaveStatus.textContent = "✕";
+        cookiesSaveStatus.title = "Не вдалося прочитати файл";
       };
       reader.readAsText(file);
     });

@@ -1329,11 +1329,14 @@ async def admin_proxy_status(which: str = "default", _=Depends(require_admin_dep
 
 @app.post("/admin/settings/cookies")
 def admin_save_cookies(cookies_content: str = Form(...), _=Depends(require_admin_dep)):
+    # Called via fetch() the moment a file is picked (see admin.html) -
+    # there's no more Зберегти button/form submit to redirect, so this
+    # just reports success/failure as JSON like the other autosave routes.
     content = cookies_content.strip()
     if not content:
-        return RedirectResponse("/admin?tab=settings&cookies_error=empty", status_code=303)
+        return JSONResponse({"error": "Порожній файл"}, status_code=400)
     auth.save_cookies(content)
-    return RedirectResponse("/admin?tab=settings&cookies_saved=1", status_code=303)
+    return {"ok": True}
 
 
 @app.post("/admin/settings/cookies/clear")
