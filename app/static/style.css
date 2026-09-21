@@ -1225,29 +1225,24 @@ button.stat-card:hover { border-color: var(--border-hover); }
 
 .maintenance-actions form { margin: 0; }
 
-/* Two-column settings block with a vertical rule down the middle. Right-
-   column items are plain siblings (not one shared form) so more than one
-   can stack in that column, each auto-placed on its own row - the left
-   column and the divider both span every row that creates (grid-row: 1 /
-   -1 tracks however many rows the right column ends up needing). */
+/* Two-column settings block - a gap, not a rule, marks the split for now.
+   Right-column items are plain siblings (not one shared form) so more
+   than one can stack in that column, each auto-placed on its own row -
+   the left column spans every row that creates (grid-row: 1 / -1 tracks
+   however many rows the right column ends up needing). */
 .settings-grid {
   background: linear-gradient(180deg, var(--bg-card), var(--card-shade));
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 16px;
   display: grid;
-  grid-template-columns: 1fr 1px 1fr;
-  gap: 18px 20px;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px 32px;
   box-shadow: 0 12px 30px -18px rgba(0, 0, 0, 0.6);
 }
 
 .settings-grid > .settings-col-left { grid-column: 1; grid-row: 1 / -1; }
-.settings-grid > .settings-grid-divider {
-  grid-column: 2;
-  grid-row: 1 / -1;
-  background: var(--border);
-}
-.settings-grid > .settings-col-right { grid-column: 3; }
+.settings-grid > .settings-col-right { grid-column: 2; }
 
 /* .settings-form used to just be a marker class paired with .card, which
    supplied this flex layout - now these are grid items in their own
@@ -1260,11 +1255,14 @@ button.stat-card:hover { border-color: var(--border-hover); }
   gap: 10px;
 }
 
+/* Gap between the stacked settings blocks (Обслуговування+Модулі /
+   Загальні налаштування+Проксі / Cookies), not just within each. */
+[data-tab-panel="settings"] > section + section { margin-top: 22px; }
+
 @media (max-width: 800px) {
   .settings-grid { grid-template-columns: 1fr; }
   .settings-grid > .settings-col-left,
   .settings-grid > .settings-col-right { grid-column: 1; grid-row: auto; }
-  .settings-grid > .settings-grid-divider { display: none; }
 }
 
 .cookies-actions {
