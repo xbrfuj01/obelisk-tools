@@ -17,10 +17,19 @@ def _set_sqlite_pragma(dbapi_connection, connection_record):
     (progress-hook/ffmpeg commits, which happen often) instead of the default
     rollback journal's exclusive lock during a write. NORMAL sync still fsyncs
     at WAL checkpoints, just not on every single commit - the standard
-    pairing for an app that commits this often on plain disk I/O."""
+    pairing for an app that commits this often on plain disk I/O.
+
+    WAL only fixes reader/writer blocking, not two writers landing at the
+    same moment - SQLite still serializes those, and without busy_timeout
+    the second one fails immediately ("database is locked") instead of
+    just waiting the few milliseconds it'd take for the first to finish.
+    Seen for real: a plain last_active UPDATE (record_activity, fires on
+    nearly every request) collided with another write and errored out.
+    5s is generous - actual contention here resolves in well under that."""
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.execute("PRAGMA busy_timeout=5000")
     cursor.close()
 
 
